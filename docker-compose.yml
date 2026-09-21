@@ -1,0 +1,46 @@
+# Forensic-Grade Agent Telemetry (FGAT) Sandbox Compose
+# Engineered for NVIDIA DGX Spark (ARM64/SBSA / Grace Blackwell GB10)
+
+services:
+  # Isolated Host Collector Daemon (Trusted Plane)
+  audit-collector:
+    build:
+      context: ./collector
+      dockerfile: Dockerfile.collector
+    container_name: fgat-audit-collector
+    user: "2001:2001"
+    volumes:
+      - socket-dir:/run/agent-journal
+      - worm-storage:/var/log/agent-worm
+      - operational-storage:/var/log/agent-operational
+    environment:
+      - FGAT_SOCKET=/run/agent-journal/events.sock
+      - FGAT_OPERATIONAL=/var/log/agent-operational/events.jsonl
+      - FGAT_WORM=/var/log/agent-worm/audit_journal.jsonl
+    restart: always
+
+  # Agent Sandbox Container (Untrusted Execution Zone)
+  # Uses NVIDIA Container Registry base image with SBSA validation
+  agent-sandbox:
+    image: nvcr.io/nvidia/ai-workbench/python-cuda130:1.0.1
+    container_name: fgat-agent-sandbox
+    user: "1001:1001"
+    depends_on:
+      - audit-collector
+    environment:
+      - FGAT_SOCKET=/run/agent-journal/events.sock
+      - MODEL_ENDPOINT=http://host.docker.internal:8000/v1
+    volumes:
+      # Sockets directory mounted: agent has write access ONLY to the socket, NOT the logs
+      - socket-dir:/run/agent-journal:rw
+      - ./workspace:/workspace:rw
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    command: ["python3", "-u", "/workspace/agent_runner.py"]
+
+volumes:
+  socket-dir:
+  worm-storage:
+  operational-storage:

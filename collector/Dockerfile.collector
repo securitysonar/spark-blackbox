@@ -1,0 +1,19 @@
+# Forensic Collector Daemon Dockerfile
+# Optimized for ARM64/SBSA architecture on NVIDIA DGX Spark
+
+FROM python:3.12-slim-bookworm
+
+# Create isolated, unprivileged service account
+RUN groupadd -g 2001 svc-audit-collector && \
+    useradd -u 2001 -g svc-audit-collector -m -s /bin/false svc-audit-collector
+
+WORKDIR /app
+COPY collector_daemon.py /app/collector_daemon.py
+
+RUN mkdir -p /run/agent-journal /var/log/agent-operational /var/log/agent-worm && \
+    chown -R svc-audit-collector:svc-audit-collector /run/agent-journal /var/log/agent-operational /var/log/agent-worm && \
+    chmod 755 /app/collector_daemon.py
+
+USER svc-audit-collector
+
+ENTRYPOINT ["python3", "-u", "/app/collector_daemon.py"]
