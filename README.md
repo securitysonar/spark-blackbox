@@ -25,6 +25,8 @@ When an autonomous AI agent with tool permissions runs on production infrastruct
 
 `spark-blackbox` implements the **Four Invariants of Forensic-Grade Agent Telemetry (FGAT)** to eliminate these blind spots.
 
+> **Forensic-Grade Agent Telemetry (FGAT)** is the architectural standard and evidentiary practice that guarantees an autonomous system's complete decision lifecycle—context deltas, external ingress hashes, model serving parameters, tool declarations, policy verdicts, and execution side-effects—is synchronously recorded in an immutable, out-of-band journal capable of non-repudiation, deterministic post-incident reconstruction, and enterprise-wide mass re-investigation.
+
 ---
 
 ## Architecture Overview
