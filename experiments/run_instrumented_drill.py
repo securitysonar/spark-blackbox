@@ -32,12 +32,15 @@ def run_drill():
         sock_path = os.path.join(tmp_dir, "events.sock")
         op_log = os.path.join(tmp_dir, "operational_events.jsonl")
         worm_log = os.path.join(tmp_dir, "worm_audit_journal.jsonl")
+        pcap_file = os.path.join(str(Path(__file__).parent.parent), "wireshark", "fgat_drill.pcap")
 
         # 1. Start host-side collector daemon in background thread
         collector = ForensicCollector(
             socket_path=sock_path,
             operational_path=op_log,
             worm_path=worm_log,
+            udp_mirror="127.0.0.1:9999",
+            pcap_path=pcap_file,
         )
         daemon_thread = threading.Thread(target=collector.start, daemon=True)
         daemon_thread.start()
@@ -134,6 +137,10 @@ def run_drill():
         # Stop collector
         collector.running = False
         time.sleep(0.2)
+
+        print(f"\n5. Wireshark PCAP Capture Generated:")
+        print(f"   Exported: {pcap_file}")
+        print(f"   Inspect with: wireshark -X lua_script:wireshark/fgat_dissector.lua wireshark/fgat_drill.pcap")
 
         print("\n" + "=" * 75)
         print("DRILL CONCLUSION: 100% Evidentiary Recovery Achieved.")

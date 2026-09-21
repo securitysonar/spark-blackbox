@@ -95,6 +95,11 @@ spark-blackbox/
 │   ├── run_compaction_failure.py# Experiment 1: Context Compaction Trap demo
 │   ├── run_tamper_attempt.py    # Experiment 3: Self-Tampering Agent demo
 │   └── run_instrumented_drill.py# Full FGAT drill & root-cause reconstruction
+├── wireshark/
+│   ├── README.md                # Wireshark dissector & live capture guide
+│   ├── fgat_dissector.lua       # Native Wireshark Lua dissector for FGAT protocol
+│   ├── fgat_drill.pcap          # Pre-recorded 5-turn evidentiary packet capture
+│   └── pcap_writer.py           # Zero-dependency Python libpcap generator
 └── analytics/
     ├── queries.sql              # DuckDB Mass Re-Investigation queries
     ├── generate_benchmark_data.py # Synthetic multi-session telemetry generator
@@ -140,6 +145,18 @@ python3 experiments/run_instrumented_drill.py
 - *Computes SHA-256 ingress hashes at file boundaries.*
 - *Validates the cryptographic block chain (`SHA-256(H_{n-1} + Turn_n)`).*
 - *Proves 100% root-cause recovery by linking Turn 5's hijacked beacon back to Turn 2's ingress hash despite context compaction.*
+- *Exports full evidentiary packet capture to `wireshark/fgat_drill.pcap`.*
+
+### 4. Inspect the 10-Tuple in Wireshark (Proof on the Wire)
+
+Inspect the entire 5-turn decision lifecycle using the native Wireshark Lua dissector:
+
+```bash
+# Launch Wireshark with the FGAT dissector loaded:
+wireshark -X lua_script:wireshark/fgat_dissector.lua wireshark/fgat_drill.pcap
+```
+
+*Every packet in the capture represents an atomic decision turn, parsed into five structured forensic trees (Agent Metadata, Context & Prompt State, Ingress Hashes, Tool Execution Boundary, and Cryptographic Hash Chain).* See [`wireshark/README.md`](wireshark/README.md) for live capture commands and display filters.
 
 ---
 
