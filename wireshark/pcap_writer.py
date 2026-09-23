@@ -6,15 +6,26 @@ without requiring root privileges, libpcap, or external C dependencies.
 
 import struct
 import time
-from typing import Optional
+from pathlib import Path
+from typing import BinaryIO, Optional, Union
 
 
 class PcapWriter:
-    def __init__(self, filename: str, snaplen: int = 65535):
-        self.filename = filename
+    def __init__(self, target: Union[str, Path, BinaryIO], snaplen: int = 65535):
+        self.target = target
         self.snaplen = snaplen
         self.file = None
+        self._owns_file = False
+        self._init_target()
         self._write_global_header()
+
+    def _init_target(self):
+        if isinstance(self.target, (str, Path)):
+            self.file = open(self.target, "wb")
+            self._owns_file = True
+        else:
+            self.file = self.target
+            self._owns_file = False
 
     def _write_global_header(self):
         """Writes 24-byte libpcap global header."""
@@ -24,7 +35,6 @@ class PcapWriter:
         # Sigfigs: 0
         # Snaplen: 65535
         # LinkType: 1 (LINKTYPE_ETHERNET)
-        self.file = open(self.filename, "wb")
         header = struct.pack("<IHHiIII", 0xa1b2c3d4, 2, 4, 0, 0, self.snaplen, 1)
         self.file.write(header)
         self.file.flush()
@@ -89,7 +99,7 @@ class PcapWriter:
         self.file.flush()
 
     def close(self):
-        if self.file and not self.file.closed:
+        if self._owns_file and self.file and not self.file.closed:
             self.file.close()
 
     def __enter__(self):

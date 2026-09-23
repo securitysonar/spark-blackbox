@@ -82,28 +82,41 @@ With `fgat_dissector.lua` loaded, you can filter packets using native Wireshark 
 | `fgat.compacted == 1` | Filter turns where context auto-compaction occurred |
 | `fgat.tool_name == "execute_shell"` | Isolate all shell execution tool attempts |
 | `fgat.gate_verdict == "allow"` | Filter approved tool actions |
+| `fgat.gate_verdict == "deny"` | Filter blocked / unauthorized tool executions |
 | `fgat.ingress_sha256 contains "69335b27"` | Trace every turn that touched a specific file hash |
 | `fgat.session_id == "sess-fgat-drill-8812"` | Isolate an entire agent session |
+| `_ws.expert.group == "Security"` | Filter all security alerts (compaction eviction or gate blocks) |
+| `_ws.expert.group == "Malformed"` | Detect malformed / corrupted FGAT datagrams |
 
 ---
 
-## Live Monitoring on NVIDIA DGX Spark
+## Live Monitoring on NVIDIA DGX Spark or Local Workstation
 
 To monitor agent telemetry live as it executes:
 
-1. **Start the Collector Daemon with UDP Mirroring on DGX Spark:**
-   ```bash
-   python3 collector/collector_daemon.py --udp-mirror 127.0.0.1:9999
-   ```
+### Method 1: Zero-Privilege Live Monitor (`live_monitor.py`)
+Stream mirrored UDP packets directly into `tshark` without requiring `root`, `sudo`, or BPF capture device permissions:
 
-2. **Capture Live on DGX Spark:**
-   ```bash
-   # Sniff live UDP packets on loopback
-   tcpdump -i lo -nn -s0 -w /tmp/live_fgat.pcap port 9999
-   ```
+```bash
+# Terminal 1: Launch live monitor
+python3 wireshark/live_monitor.py
 
-3. **Or Stream Remotely to Your Workstation Wireshark:**
-   If running the DGX Spark remotely, set `--udp-mirror <your-workstation-ip>:9999` and start Wireshark on your local machine capturing on UDP port 9999. Every decision turn will appear in your live packet stream in real time.
+# Optional: Add display filters or full verbose trees
+python3 wireshark/live_monitor.py -V -Y 'fgat.gate_verdict == "deny"' --save /tmp/session.pcap
+```
+
+### Method 2: Kernel Packet Capture (Root / BPF)
+If capturing with root or system packet capture tools:
+```bash
+# 1. Start the Collector Daemon with UDP Mirroring:
+python3 collector/collector_daemon.py --udp-mirror 127.0.0.1:9999
+
+# 2. Sniff live UDP packets on loopback:
+tcpdump -i lo -nn -s0 -w /tmp/live_fgat.pcap port 9999
+```
+
+### Method 3: Stream Remotely to Your Workstation Wireshark
+If running the DGX Spark remotely, set `--udp-mirror <your-workstation-ip>:9999` and start Wireshark on your local machine capturing on UDP port 9999. Every decision turn will appear in your live packet stream in real time.
 
 ---
 

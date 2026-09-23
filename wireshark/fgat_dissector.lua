@@ -49,30 +49,38 @@ local function parse_json_value(str, i)
         i = i + 1
         while true do
             i = str:find("%S", i)
-            if not i then return obj, i end
+            if not i then error("unterminated object") end
             if str:sub(i, i) == "}" then return obj, i + 1 end
-            if str:sub(i, i) == "," then i = i + 1 end
-            i = str:find("%S", i)
-            if str:sub(i, i) == "}" then return obj, i + 1 end
+            if str:sub(i, i) == "," then
+                i = i + 1
+                i = str:find("%S", i)
+                if not i then error("unterminated object after comma") end
+                if str:sub(i, i) == "}" then return obj, i + 1 end
+            end
 
             local key
             key, i = parse_json_value(str, i)
+            if type(key) ~= "string" then error("expected string key") end
             i = str:find("%S", i)
-            if str:sub(i, i) == ":" then i = i + 1 end
+            if not i or str:sub(i, i) ~= ":" then error("expected colon") end
+            i = i + 1
             local val
             val, i = parse_json_value(str, i)
-            if key then obj[key] = val end
+            obj[key] = val
         end
     elseif c == "[" then
         local arr = {}
         i = i + 1
         while true do
             i = str:find("%S", i)
-            if not i then return arr, i end
+            if not i then error("unterminated array") end
             if str:sub(i, i) == "]" then return arr, i + 1 end
-            if str:sub(i, i) == "," then i = i + 1 end
-            i = str:find("%S", i)
-            if str:sub(i, i) == "]" then return arr, i + 1 end
+            if str:sub(i, i) == "," then
+                i = i + 1
+                i = str:find("%S", i)
+                if not i then error("unterminated array after comma") end
+                if str:sub(i, i) == "]" then return arr, i + 1 end
+            end
 
             local val
             val, i = parse_json_value(str, i)
@@ -85,7 +93,34 @@ local function parse_json_value(str, i)
         while j <= #str do
             local ch = str:sub(j, j)
             if escaped then
-                res = res .. ch
+                if ch == "n" then
+                    res = res .. "\n"
+                elseif ch == "r" then
+                    res = res .. "\r"
+                elseif ch == "t" then
+                    res = res .. "\t"
+                elseif ch == "b" then
+                    res = res .. "\b"
+                elseif ch == "f" then
+                    res = res .. "\f"
+                elseif ch == '"' then
+                    res = res .. '"'
+                elseif ch == "\\" then
+                    res = res .. "\\"
+                elseif ch == "/" then
+                    res = res .. "/"
+                elseif ch == "u" and j + 4 <= #str then
+                    local hex = str:sub(j + 1, j + 4)
+                    local cp = tonumber(hex, 16)
+                    if cp and cp < 128 then
+                        res = res .. string.char(cp)
+                    else
+                        res = res .. "\\u" .. hex
+                    end
+                    j = j + 4
+                else
+                    res = res .. ch
+                end
                 escaped = false
             elseif ch == "\\" then
                 escaped = true
@@ -96,7 +131,7 @@ local function parse_json_value(str, i)
             end
             j = j + 1
         end
-        return res, j
+        error("unterminated string")
     elseif str:sub(i, i + 3) == "true" then
         return true, i + 4
     elseif str:sub(i, i + 4) == "false" then
@@ -108,13 +143,20 @@ local function parse_json_value(str, i)
         if num_str then
             return tonumber(num_str), i + #num_str
         end
-        return nil, i + 1
+        error("unexpected character: " .. c)
     end
 end
 
 local function json_decode(str)
     if not str or str == "" then return nil end
-    local ok, res = pcall(function() return (parse_json_value(str, 1)) end)
+    local ok, res = pcall(function()
+        local val, next_i = parse_json_value(str, 1)
+        if next_i then
+            local rest = str:find("%S", next_i)
+            if rest then error("trailing garbage") end
+        end
+        return val
+    end)
     if ok then return res else return nil end
 end
 
@@ -130,48 +172,60 @@ function fgat_proto.dissector(buffer, pinfo, tree)
 
     pinfo.cols.protocol = "FGAT"
 
-    -- Extract Key Provenance Tuple elements
-    local turn_id   = data and data.turn_id or 0
-    local session_id = data and data.session_id or "unknown"
-    local timestamp = data and data.timestamp_utc or ""
-    local model_info = (data and data.model_metadata) or {}
-    local model_name = model_info.name or "unknown"
-    local model_prov = model_info.provider or "unknown"
-    local sys_hash  = data and data.system_prompt_hash or ""
-    
-    local ctx_delta = (data and data.context_delta) or {}
-    local compacted = (ctx_delta.compacted == true)
-    
-    local ingress   = (data and data.ingress_hashes) or {}
-    local manifest  = data and data.tool_manifest_hash or ""
-    
-    local action    = (data and data.proposed_action) or {}
-    local tool_name = action.name or "unknown"
-    local tool_params = ""
-    if action.parameters then
-        tool_params = type(action.parameters) == "table" and "JSON" or tostring(action.parameters)
-        if action.parameters.command then
-            tool_params = action.parameters.command
-        elseif action.parameters.path then
-            tool_params = action.parameters.path
-        end
+    if not data or type(data) ~= "table" then
+        pinfo.cols.info = "[MALFORMED] Non-JSON or Corrupted FGAT Payload"
+        local subtree = tree:add(fgat_proto, buffer(), "Forensic-Grade Agent Telemetry [MALFORMED / NON-JSON]")
+        subtree:add_expert_info(PI_MALFORMED, PI_ERROR, "Payload is not valid FGAT JSON telemetry")
+        return
     end
 
-    local gate      = (data and data.gate_verdict) or {}
+    -- Extract Key Provenance Tuple elements
+    local turn_id   = data.turn_id or 0
+    local session_id = data.session_id or "unknown"
+    local timestamp = data.timestamp_utc or ""
+    local model_info = data.model_metadata or {}
+    local model_name = model_info.name or "unknown"
+    local model_prov = model_info.provider or "unknown"
+    local sys_hash  = data.system_prompt_hash or ""
+    
+    local ctx_delta = data.context_delta or {}
+    local compacted = (ctx_delta.compacted == true)
+    
+    local ingress   = data.ingress_hashes or {}
+    local manifest  = data.tool_manifest_hash or ""
+    
+    local action    = data.proposed_action or {}
+    local tool_name = action.name or "unknown"
+    local tool_params = ""
+    if type(action.parameters) == "table" then
+        if action.parameters.command then
+            tool_params = tostring(action.parameters.command)
+        elseif action.parameters.path then
+            tool_params = tostring(action.parameters.path)
+        else
+            tool_params = "JSON"
+        end
+    elseif action.parameters ~= nil then
+        tool_params = tostring(action.parameters)
+    end
+
+    local gate      = data.gate_verdict or {}
     local verdict   = gate.status or "unknown"
     local rule_id   = gate.rule_id or "none"
+    local is_denied = (verdict:lower() == "deny" or verdict:lower() == "block")
 
-    local result    = (data and data.execution_result) or {}
+    local result    = data.execution_result or {}
     local exit_code = result.exit_code or 0
 
-    local chain     = (data and data._chain) or {}
+    local chain     = data._chain or {}
     local prev_hash = chain.prev_hash or "0"
     local block_hash= chain.block_hash or "0"
 
     -- Update Wireshark Packet List Info Column
     local alert_tag = compacted and " [COMPACTION ALERT]" or ""
-    pinfo.cols.info = string.format("[Turn %d] %s(%s) | Gate: %s%s | Block: %s...", 
-                                    turn_id, tool_name, tool_params, string.upper(verdict), alert_tag, string.sub(block_hash, 1, 8))
+    local verdict_tag = is_denied and " [POLICY VIOLATION]" or ""
+    pinfo.cols.info = string.format("[Turn %d] %s(%s) | Gate: %s%s%s | Block: %s...", 
+                                    turn_id, tool_name, tool_params, string.upper(verdict), alert_tag, verdict_tag, string.sub(block_hash, 1, 8))
 
     -- Populate Wireshark Protocol Tree
     local subtree = tree:add(fgat_proto, buffer(), string.format("Forensic-Grade Agent Telemetry, Turn %d: %s [%s]", turn_id, tool_name, string.upper(verdict)))
@@ -205,6 +259,12 @@ function fgat_proto.dissector(buffer, pinfo, tree)
     t_action:add(f_gate_verdict, verdict)
     t_action:add(f_gate_rule, rule_id)
     t_action:add(f_exit_code, exit_code)
+    if is_denied then
+        t_action:add_expert_info(PI_SECURITY, PI_WARN, string.format("Tool execution BLOCKED by gate policy: %s", rule_id))
+    end
+    if exit_code ~= 0 and not is_denied then
+        t_action:add_expert_info(PI_RESPONSE_CODE, PI_WARN, string.format("Tool execution returned non-zero exit code: %d", exit_code))
+    end
 
     local t_chain = subtree:add("5. Evidentiary Hash Chain (Non-Repudiation)")
     t_chain:add(f_prev_hash, prev_hash)
