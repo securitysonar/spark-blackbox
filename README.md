@@ -94,7 +94,8 @@ spark-blackbox/
 │   │       └── src/core.py
 │   ├── run_compaction_failure.py# Experiment 1: Context Compaction Trap demo
 │   ├── run_tamper_attempt.py    # Experiment 3: Self-Tampering Agent demo
-│   └── run_instrumented_drill.py# Full FGAT drill & root-cause reconstruction
+│   ├── run_instrumented_drill.py# Full FGAT drill & root-cause reconstruction (scripted turns)
+│   └── rig_fgat/                # Live-model trials: unmodified rig + Qwen 3.8, tools in a container sandbox
 ├── wireshark/
 │   ├── README.md                # Wireshark dissector & live capture guide
 │   ├── fgat_dissector.lua       # Native Wireshark Lua dissector for FGAT protocol

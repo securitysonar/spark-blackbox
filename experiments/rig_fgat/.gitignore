@@ -1,0 +1,5 @@
+# Per-trial output and host-specific reports stay local
+runs/
+listener/
+sandbox_check.json
+*.log

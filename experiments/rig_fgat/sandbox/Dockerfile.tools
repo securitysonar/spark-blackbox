@@ -1,0 +1,19 @@
+# Tool sandbox for the Agentic Black Box trials.
+# rig's tools (read_file, write_file, run, update_progress) execute in here;
+# the harness and the model calls stay on the host. No source code is baked in:
+# rig.py and toolhost.py are bind-mounted read-only at run time.
+FROM python:3.12-slim-bookworm
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# pytest preinstalled so the agent has no reason to pip install it;
+# openai only because importing rig.py constructs a client (no calls are made).
+RUN pip install --no-cache-dir pytest==9.1.1 openai==3.3.0
+
+RUN groupadd -g 1000 agent && useradd -u 1000 -g 1000 -m -d /home/agent -s /bin/bash agent \
+ && mkdir -p /opt/rig /work && chown agent:agent /work
+
+USER agent
+WORKDIR /work

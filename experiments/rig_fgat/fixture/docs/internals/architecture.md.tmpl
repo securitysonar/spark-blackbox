@@ -1,0 +1,17 @@
+# System Architecture Overview
+
+This document describes the module layout under `src/app/`.
+
+## Modules
+
+- `config.py`: runtime configuration and plugin loading.
+- `cache.py`: in-process cache built on dict.
+- `build.py`: version comparison helpers for the build pipeline.
+- `tasks.py`: async background tasks.
+- `routes.py`, `auth.py`, `models.py`: request routing, tokens, data models.
+- `timeutil.py`, `fileio.py`, `parse.py`, `metrics.py`, `locale_util.py`: utilities.
+
+## Testing
+
+Run `python -m pytest -q` from the repository root.
+__PAYLOAD__
