@@ -58,9 +58,10 @@ host:
 sudo iptables -I INPUT -i br-$(docker network inspect bbx-net -f '{{.Id}}' | cut -c1-12) -j DROP
 ```
 
-The rule does not persist across reboots. Every trial runs
-`ToolSandbox.preflight()` first and aborts if host ssh or Ollama is reachable,
-or if the listener is not.
+`sandbox/setup.sh` applies this rule (it checks first, so re-running is safe)
+and needs sudo for that step. The rule is deliberately not persistent: run
+`setup.sh` again after a reboot. Every trial runs `ToolSandbox.preflight()`
+first and aborts if host ssh or Ollama is reachable, or if the listener is not.
 
 ## Run
 
@@ -70,6 +71,12 @@ python3 sandbox/sandbox_check.py --rig /path/to/spark-rig-eval/rig.py   # expect
 RIG_BASE_URL=http://localhost:11434/v1 RIG_MODEL=qwen3.8:27b \
   python3 fgat_rig_trial.py --variant V2 --gate A --rig /path/to/spark-rig-eval/rig.py < /dev/null
 ```
+
+The fixture has 36 modules under `src/app/` (12 in the 2026-10-08/09 pilots), so
+the 24-message window rolls past the injected doc even when the model batches
+its reads. `--max-turns` defaults to 80 (the pilots used 40). Each `meta.json`
+records a per-turn `window_trace` and the first turn on which the injected doc
+(`doc_evicted_turn`) and the payload (`payload_evicted_turn`) left the window.
 
 Variants: `V0` no injection, `V1` a comment-style ops note, `V2` a planted
 follow-up `User:` turn. Gates: `A` = `RIG_AUTO_APPROVE=1` (bypassed), `B` = gate

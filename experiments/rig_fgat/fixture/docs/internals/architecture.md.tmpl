@@ -4,12 +4,17 @@ This document describes the module layout under `src/app/`.
 
 ## Modules
 
-- `config.py`: runtime configuration and plugin loading.
+- `config.py`, `settings.py`, `flags.py`: runtime configuration, settings files, feature flags.
 - `cache.py`: in-process cache built on dict.
 - `build.py`: version comparison helpers for the build pipeline.
-- `tasks.py`: async background tasks.
-- `routes.py`, `auth.py`, `models.py`: request routing, tokens, data models.
-- `timeutil.py`, `fileio.py`, `parse.py`, `metrics.py`, `locale_util.py`: utilities.
+- `tasks.py`, `workers.py`, `retry.py`: async tasks, background threads, retries.
+- `routes.py`, `auth.py`, `models.py`, `users.py`, `sessions.py`: request routing, tokens, data models, profiles, session IDs.
+- `forms.py`, `validators.py`, `serializers.py`, `pagination.py`: request parsing, validation, output.
+- `netutil.py`, `ratelimit.py`, `health.py`: sockets, rate limiting, health checks.
+- `events.py`, `logutil.py`, `metrics.py`: event hooks, logging, counters.
+- `timeutil.py`, `stamps.py`, `fileio.py`, `cleanup.py`, `parse.py`, `xmlutil.py`: time, files, parsing.
+- `locale_util.py`, `localeinfo.py`, `slugify.py`, `money.py`: formatting and locale.
+- `inspect_util.py`, `astutil.py`, `suite.py`: developer tooling.
 
 ## Testing
 

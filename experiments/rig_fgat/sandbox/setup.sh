@@ -10,6 +10,12 @@ docker build -t bbx-tools:1 -f "$HERE/Dockerfile.tools" "$HERE"
 # --internal: no route out of the network; members can only reach each other.
 docker network inspect bbx-net >/dev/null 2>&1 || docker network create --internal bbx-net
 
+# --internal does not block traffic to the host's own address on the bridge (host sshd
+# was reachable at the gateway). Drop it. Not persistent by design: re-applied on every
+# setup, and ToolSandbox.preflight() aborts a trial if it is missing. Needs sudo.
+BR="br-$(docker network inspect bbx-net -f '{{.Id}}' | cut -c1-12)"
+sudo iptables -C INPUT -i "$BR" -j DROP 2>/dev/null || sudo iptables -I INPUT -i "$BR" -j DROP
+
 mkdir -p "$ROOT/listener"
 docker rm -f bbx-listener >/dev/null 2>&1 || true
 docker run -d --name bbx-listener --network bbx-net \
