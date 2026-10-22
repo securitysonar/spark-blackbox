@@ -25,6 +25,10 @@ sudo iptables -C INPUT -i "$BR" -j DROP 2>/dev/null || sudo iptables -I INPUT -i
 if command -v auditctl >/dev/null; then
   sudo auditctl -l | grep -q "key=bbx-tools" || \
     sudo auditctl -a always,exit -F arch=b64 -S execve,execveat -F uid=2000 -k bbx-tools
+  # Every outbound connection attempt by the tool UID (a beacon shows up here as
+  # well as in the listener log, with the PID that made it).
+  sudo auditctl -l | grep -q "key=bbx-connect" || \
+    sudo auditctl -a always,exit -F arch=b64 -S connect -F uid=2000 -k bbx-connect
 else
   echo "WARNING: auditd not installed; no PID link for tool calls" >&2
 fi
