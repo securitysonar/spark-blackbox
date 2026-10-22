@@ -1,0 +1,20 @@
+{
+  "label": "after",
+  "collector_sha256": "3e7fed6040ccb273fb7a482c500acf6cf77d55cdf04a2eca5fa66c73bb984c40",
+  "image": "sha256:a97a8ccef6a5cb2f20685de395d13e38679663e8db773f0499026e4b5831582d",
+  "host_uid": 1000,
+  "h6": {
+    "accepted": false,
+    "chained": false,
+    "verify_exit_with_forgery": 0
+  },
+  "h7": {
+    "verifier_passed_edit": false
+  },
+  "h7b": {
+    "passed_without_anchor": true,
+    "passed_with_anchor": false
+  },
+  "tool_user": "2000:2000",
+  "collector_fixed": true
+}

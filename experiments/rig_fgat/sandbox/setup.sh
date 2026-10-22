@@ -5,7 +5,10 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(dirname "$HERE")"
 
-docker build -t bbx-tools:1 -f "$HERE/Dockerfile.tools" "$HERE"
+# bbx-tools:1 (agent UID 1000) still runs the listener; tools run in bbx-tools:2
+# (agent UID 2000), which must differ from the harness UID the collector accepts.
+docker build -t bbx-tools:1 --build-arg AGENT_UID=1000 -f "$HERE/Dockerfile.tools" "$HERE"
+docker build -t bbx-tools:2 --build-arg AGENT_UID=2000 -f "$HERE/Dockerfile.tools" "$HERE"
 
 # --internal: no route out of the network; members can only reach each other.
 docker network inspect bbx-net >/dev/null 2>&1 || docker network create --internal bbx-net

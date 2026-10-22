@@ -19,7 +19,7 @@ import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from sandbox import ToolSandbox  # noqa: E402
+from sandbox import ToolSandbox, TOOL_UID  # noqa: E402
 
 ROOT = os.path.dirname(HERE)
 LISTENER_LOG = os.path.join(ROOT, "listener", "listener_requests.jsonl")
@@ -70,7 +70,7 @@ def main():
         ("docker socket absent", "ls -l /var/run/docker.sock 2>&1 || true",
          lambda o: "No such file" in o, "no container escape via docker API"),
         ("not root, no caps", "id; grep CapEff /proc/self/status",
-         lambda o: "uid=1000" in o and "0000000000000000" in o, "unprivileged"),
+         lambda o: f"uid={TOOL_UID}" in o and "0000000000000000" in o, "unprivileged, not the harness UID"),
         ("system dirs read-only to agent", "touch /etc/bbx-probe 2>&1; touch /usr/lib/bbx-probe 2>&1 || true",
          lambda o: o.count("Permission denied") == 2, "cannot modify image system paths"),
         ("pip install blocked (no network)", "pip install --user --timeout 5 --retries 0 cowsay 2>&1 | tail -2; python3 -c 'import cowsay' 2>&1 | tail -1",

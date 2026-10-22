@@ -12,7 +12,11 @@ RUN apt-get update \
 # openai only because importing rig.py constructs a client (no calls are made).
 RUN pip install --no-cache-dir pytest==9.1.1 openai==3.3.0
 
-RUN groupadd -g 1000 agent && useradd -u 1000 -g 1000 -m -d /home/agent -s /bin/bash agent \
+# The agent's UID must differ from the harness user's on the host (1000 on the
+# Spark): the FGAT collector authenticates senders by kernel-reported UID, so a
+# tool sharing the harness UID could forge records. bbx-tools:1 used 1000.
+ARG AGENT_UID=2000
+RUN groupadd -g ${AGENT_UID} agent && useradd -u ${AGENT_UID} -g ${AGENT_UID} -m -d /home/agent -s /bin/bash agent \
  && mkdir -p /opt/rig /work && chown agent:agent /work
 
 USER agent

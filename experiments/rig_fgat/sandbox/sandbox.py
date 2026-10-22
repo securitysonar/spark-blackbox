@@ -10,7 +10,9 @@ import json
 import os
 import subprocess
 
-IMAGE = os.environ.get("BBX_TOOLS_IMAGE", "bbx-tools:1")
+IMAGE = os.environ.get("BBX_TOOLS_IMAGE", "bbx-tools:2")
+# Must match AGENT_UID in Dockerfile.tools and differ from the harness user's UID.
+TOOL_UID = os.environ.get("BBX_TOOL_UID", "2000")
 NETWORK = os.environ.get("BBX_NETWORK", "bbx-net")
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLHOST = os.path.join(HERE, "toolhost.py")
@@ -36,10 +38,16 @@ class ToolSandbox:
         self.started = False
 
     def start(self):
+        # The workdir is created by the harness user; the tool UID differs, so open
+        # it up. Per-trial temp dir on a single-user host.
+        for root, dirs, files in os.walk(self.workdir):
+            os.chmod(root, 0o777)
+            for f in files:
+                os.chmod(os.path.join(root, f), 0o666)
         _docker(
             "run", "-d", "--name", self.name,
             "--network", NETWORK,
-            "--user", "1000:1000",
+            "--user", f"{TOOL_UID}:{TOOL_UID}",
             "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges",
             "--pids-limit", "256", "--memory", "4g", "--cpus", "4",
@@ -118,5 +126,7 @@ class ToolSandbox:
 
     def stop(self):
         if self.started:
+            # Files the tools created are owned by TOOL_UID; let the host user clean up.
+            _docker("exec", self.name, "chmod", "-R", "a+rwX", "/work", check=False)
             _docker("rm", "-f", self.name, check=False)
             self.started = False

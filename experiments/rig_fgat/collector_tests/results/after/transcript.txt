@@ -1,0 +1,51 @@
+# H6/H7 after — 2026-10-22T11:38:17Z
+collector: 3e7fed6040ccb273fb7a482c500acf6cf77d55cdf04a2eca5fa66c73bb984c40  collector/collector_daemon.py
+image: bbx-tools:2 sha256:a97a8ccef6a5cb2f20685de395d13e38679663e8db773f0499026e4b5831582d
+host uid: 1000  tool container user: 2000:2000
+socket mode: 0o660
+
+## H6 forgery
+socket mode: 0o660
+container command: docker run --rm --network none --user 2000:2000 --cap-drop ALL --security-opt no-new-privileges -v /tmp/bbx-h6h7-49f8w8i7/agent-journal:/run/agent-journal bbx-tools:2 python3 -c import json,socket,sys,os; r=json.loads(sys.argv[1]); s=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM); n=s.sendto(json.dumps(r).encode(),'/run/agent-journal/events.sock'); print('container uid',os.getuid(),'sent',n,'bytes') '<forged record JSON>'
+container exit: 1
+container stdout: 
+container stderr: PermissionError: [Errno 13] Permission denied
+
+## H6b forgery with the socket mode relaxed to 0666 (tests the collector's UID check alone)
+socket mode: 0o666
+container command: docker run --rm --network none --user 2000:2000 --cap-drop ALL --security-opt no-new-privileges -v /tmp/bbx-h6h7-49f8w8i7/agent-journal:/run/agent-journal bbx-tools:2 python3 -c import json,socket,sys,os; r=json.loads(sys.argv[1]); s=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM); n=s.sendto(json.dumps(r).encode(),'/run/agent-journal/events.sock'); print('container uid',os.getuid(),'sent',n,'bytes') '<forged record JSON>'
+container exit: 0
+container stdout: container uid 2000 sent 320 bytes
+collector output:
+[-] Rejected datagram from {'pid': 1003039, 'uid': 2000, 'gid': 2000}: sender uid not allowed
+[*] Forensic Collector listening on: /tmp/bbx-h6h7-49f8w8i7/agent-journal/events.sock
+[*] Operational stream target:     /tmp/bbx-h6h7-49f8w8i7/operational/events.jsonl
+[*] Evidentiary WORM target:       /tmp/bbx-h6h7-49f8w8i7/worm/audit_journal.jsonl
+[*] Initial block hash:            0000000000000000...
+[*] Accepted sender UIDs:          [1000]
+
+[*] Stopping forensic collector daemon...
+[*] Collector daemon shutdown complete.
+rejected datagrams logged: 1
+{"host_ingest_utc":"2026-10-22T11:38:19.748422+00:00","payload_bytes":320,"payload_sha256":"768806c86daf011f06947183934fa2db78d6bdd65e652fdb3892c92fe0dfc4df","reason":"sender uid not allowed","sender":{"gid":2000,"pid":1003039,"uid":2000}}
+journal records: 3 (3 sent from the host harness position)
+verify (unedited journal) exit: 0
+[+] Recomputed and verified 3 blocks in /tmp/bbx-h6h7-49f8w8i7/worm/audit_journal.jsonl. Head: 3fff91cbad94f452e082fdce7423a68cbffc2668e96aadb5dca8636d1a9c5b4e
+H6 RESULT: forged record accepted=False chained=False verifier_exit_on_journal_with_forgery=0
+
+## H7 byte edit
+edited line 2: "pytest -q" -> "pytesT -q" (one byte, payload field; _chain untouched)
+cmp -l (byte offset, octal old, octal new): 998 164 124
+verify (edited journal) exit: 1
+[-] Line 2: Hash mismatch! Stored block_hash 60b3eef633822c533beb3b305342a2e81488bd1fd23afb312faadb1c9af01c97, recomputed dcda557918c6d5bdca496fe78215b26744a39def67239e43bf94f7b695deaf7c. The record was altered after it was chained.
+H7 RESULT: verifier passed the edited journal=False
+
+## H7b byte edit with the whole chain recomputed
+verify (rewritten journal, no anchor) exit: 0
+[+] Recomputed and verified 3 blocks in /home/pete/code/blackbox-eval/collector_tests/results/after/journal_rewritten.jsonl. Head: 136d7da364db2bd02499eae9225681974be9618b58ce032fd15c17019eace220
+verify (rewritten journal, with anchor) exit: 1
+[+] Recomputed and verified 3 blocks in /home/pete/code/blackbox-eval/collector_tests/results/after/journal_rewritten.jsonl. Head: 136d7da364db2bd02499eae9225681974be9618b58ce032fd15c17019eace220
+[-] Anchor mismatch at block 2: journal has 3 blocks, anchor /home/pete/code/blackbox-eval/collector_tests/results/after/operational.jsonl has 3; sequences differ.
+H7b RESULT: {'passed_without_anchor': True, 'passed_with_anchor': False}
+
+summary: {"label": "after", "collector_sha256": "3e7fed6040ccb273fb7a482c500acf6cf77d55cdf04a2eca5fa66c73bb984c40", "image": "sha256:a97a8ccef6a5cb2f20685de395d13e38679663e8db773f0499026e4b5831582d", "host_uid": 1000, "h6": {"accepted": false, "chained": false, "verify_exit_with_forgery": 0}, "h7": {"verifier_passed_edit": false}, "h7b": {"passed_without_anchor": true, "passed_with_anchor": false}, "tool_user": "2000:2000", "collector_fixed": true}

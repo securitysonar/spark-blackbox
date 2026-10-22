@@ -20,6 +20,7 @@ Usage (on the Spark):
   python3 h6_h7.py --collector /path/to/collector_daemon.py --label before --out results/
 """
 import argparse
+import importlib.util
 import json
 import os
 import shutil
@@ -30,7 +31,6 @@ import sys
 import tempfile
 import time
 
-IMAGE = os.environ.get("BBX_TOOLS_IMAGE", "bbx-tools:1")
 FORGED_MARKER = "H6-FORGED-RECORD"
 
 
@@ -60,7 +60,13 @@ def main():
     ap.add_argument("--collector", required=True)
     ap.add_argument("--label", required=True, help="before | after")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--image", default=os.environ.get("BBX_TOOLS_IMAGE", "bbx-tools:2"),
+                    help="tool image (the before run used bbx-tools:1)")
+    ap.add_argument("--tool-uid", default=os.environ.get("BBX_TOOL_UID", "2000"),
+                    help="UID the tool container runs as (the before run used 1000)")
     a = ap.parse_args()
+    IMAGE = a.image
+    TOOL_USER = f"{a.tool_uid}:{a.tool_uid}"
 
     out = os.path.join(os.path.abspath(a.out), a.label)
     os.makedirs(out, exist_ok=False)
@@ -85,7 +91,9 @@ def main():
     say("collector:", sha_out.strip())
     rc, img, _ = run(["docker", "image", "inspect", "--format", "{{.Id}}", IMAGE])
     say("image:", IMAGE, img.strip())
-    say("host uid:", os.getuid())
+    say("host uid:", os.getuid(), " tool container user:", TOOL_USER)
+    rc, helptext, _ = run([sys.executable, a.collector, "--help"])
+    fixed = "--anchor" in helptext
 
     coll = subprocess.Popen([sys.executable, a.collector, "--socket", sock_path,
                              "--worm", worm, "--operational", oper],
@@ -114,18 +122,28 @@ def main():
               "s=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM); "
               "n=s.sendto(json.dumps(r).encode(),'/run/agent-journal/events.sock'); "
               "print('container uid',os.getuid(),'sent',n,'bytes')")
-    cmd = ["docker", "run", "--rm", "--network", "none", "--user", "1000:1000",
+    cmd = ["docker", "run", "--rm", "--network", "none", "--user", TOOL_USER,
            "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
            "-v", f"{sock_dir}:/run/agent-journal", IMAGE,
            "python3", "-c", sender, json.dumps(forged)]
-    say("\n## H6 forgery")
-    say("container command:", " ".join(cmd[:-1]), "'<forged record JSON>'")
-    rc, so, se = run(cmd)
-    say("container exit:", rc)
-    say("container stdout:", so.strip())
-    if se.strip():
-        say("container stderr:", se.strip())
-    time.sleep(1.0)
+
+    def container_send(title):
+        say(title)
+        say("socket mode:", oct(os.stat(sock_path).st_mode & 0o777))
+        say("container command:", " ".join(cmd[:-1]), "'<forged record JSON>'")
+        rc, so, se = run(cmd)
+        say("container exit:", rc)
+        say("container stdout:", so.strip())
+        if se.strip():
+            say("container stderr:", se.strip().splitlines()[-1])
+        time.sleep(1.0)
+
+    container_send("\n## H6 forgery")
+    if fixed:
+        # H6b: take the socket mode out of the picture, so the collector's own UID
+        # check is what decides. Simulates a misconfigured or bypassed file mode.
+        os.chmod(sock_path, 0o666)
+        container_send("\n## H6b forgery with the socket mode relaxed to 0666 (tests the collector's UID check alone)")
 
     coll.send_signal(signal.SIGTERM)
     try:
@@ -137,9 +155,17 @@ def main():
 
     shutil.copy(worm, os.path.join(out, "journal.jsonl"))
     shutil.copy(oper, os.path.join(out, "operational.jsonl"))
+    rejects = os.path.join(os.path.dirname(worm), "rejected.jsonl")
+    if os.path.exists(rejects):
+        shutil.copy(rejects, os.path.join(out, "rejected.jsonl"))
+        with open(rejects, encoding="utf-8") as f:
+            rej_lines = [l for l in f.read().splitlines() if l.strip()]
+        say(f"rejected datagrams logged: {len(rej_lines)}")
+        for l in rej_lines:
+            say(l)
     with open(worm, encoding="utf-8") as f:
         lines = [l for l in f.read().splitlines() if l.strip()]
-    say(f"journal records: {len(lines)}")
+    say(f"journal records: {len(lines)} (3 sent from the host harness position)")
     forged_idx = [i for i, l in enumerate(lines) if FORGED_MARKER in l]
     h6_accepted = bool(forged_idx)
     h6_chained = False
@@ -179,11 +205,42 @@ def main():
     h7_passed = rc == 0
     say(f"H7 RESULT: verifier passed the edited journal={h7_passed}")
 
+    h7b = None
+    if fixed:
+        # H7b: an editor who can rewrite the whole file recomputes every hash after
+        # the edit. The chain is then self-consistent; only the external anchor
+        # (the operational plane's block_hash sequence) can catch it.
+        say("\n## H7b byte edit with the whole chain recomputed")
+        spec = importlib.util.spec_from_file_location("collector", a.collector)
+        col = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(col)
+        prev, rewritten = "0" * 64, []
+        for l in edited:
+            r = json.loads(l)
+            r.pop("_chain", None)
+            bh = col.block_hash(prev, r)
+            r["_chain"] = {"prev_hash": prev, "block_hash": bh}
+            rewritten.append(col.canonical(r).decode("utf-8"))
+            prev = bh
+        rewritten_path = os.path.join(out, "journal_rewritten.jsonl")
+        with open(rewritten_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(rewritten) + "\n")
+        rc1, so, se = run([sys.executable, a.collector, "--verify", "--worm", rewritten_path])
+        say("verify (rewritten journal, no anchor) exit:", rc1)
+        say((so + se).rstrip())
+        rc2, so, se = run([sys.executable, a.collector, "--verify", "--worm", rewritten_path,
+                           "--anchor", os.path.join(out, "operational.jsonl")])
+        say("verify (rewritten journal, with anchor) exit:", rc2)
+        say((so + se).rstrip())
+        h7b = {"passed_without_anchor": rc1 == 0, "passed_with_anchor": rc2 == 0}
+        say(f"H7b RESULT: {h7b}")
+
     summary = {"label": a.label, "collector_sha256": sha_out.split()[0] if sha_out else None,
                "image": img.strip(), "host_uid": os.getuid(),
                "h6": {"accepted": h6_accepted, "chained": h6_chained,
                       "verify_exit_with_forgery": h6_verify_rc},
-               "h7": {"verifier_passed_edit": h7_passed}}
+               "h7": {"verifier_passed_edit": h7_passed}, "h7b": h7b,
+               "tool_user": TOOL_USER, "collector_fixed": fixed}
     with open(os.path.join(out, "summary.json"), "w") as f:
         json.dump(summary, f, indent=2)
     say("\nsummary:", json.dumps(summary))
