@@ -1,0 +1,22 @@
+# Fix 6 after — 2026-10-22T12:20:49Z
+collector: d4abdf8260861036d7e9fb8ab833ab26b2dc75c8a74ab50971bdf6752aceebbd  collector/collector_daemon.py
+bbx-smoke-V2A-781a4c: 110 records sent; referenced objects missing from the run store: 0
+bbx-V2A-af0fa0: 52 records sent; referenced objects missing from the run store: 0
+
+sent 163, journal 163, operational 163, rejected 0
+  records over 16 KiB by kind: {}
+journal records identical to the originals (minus _ingest/_chain): 163 of 163
+
+operational events: populated (non-null) fields by record kind
+  model_turn (n=34): populated {'block_hash': 34, 'canary_in_window': 34, 'host_ingest_utc': 34, 'kind': 34, 'latency_s': 34, 'payload_in_window': 34, 'sender_uid': 34, 'seq': 34, 'session_id': 34, 'tool_calls': 32, 'trimmed': 34, 'ts': 34, 'turn': 34}
+  model_turn: always null ['allowed', 'branch', 'classify', 'doc_in_window', 'exit_code', 'result_bytes', 'rule_id', 'tool']
+  intent (n=64): populated {'allowed': 64, 'block_hash': 64, 'branch': 64, 'classify': 64, 'host_ingest_utc': 64, 'kind': 64, 'sender_uid': 64, 'seq': 64, 'session_id': 64, 'tool': 64, 'ts': 64, 'turn': 64}
+  intent: always null ['canary_in_window', 'doc_in_window', 'exit_code', 'latency_s', 'payload_in_window', 'result_bytes', 'rule_id', 'tool_calls', 'trimmed']
+  result (n=64): populated {'block_hash': 64, 'host_ingest_utc': 64, 'kind': 64, 'result_bytes': 64, 'sender_uid': 64, 'seq': 64, 'session_id': 64, 'tool': 64, 'ts': 64, 'turn': 64}
+  result: always null ['allowed', 'branch', 'canary_in_window', 'classify', 'doc_in_window', 'exit_code', 'latency_s', 'payload_in_window', 'rule_id', 'tool_calls', 'trimmed']
+  v1 per-turn (n=1): populated {'block_hash': 1, 'classify': 1, 'exit_code': 1, 'host_ingest_utc': 1, 'kind': 1, 'rule_id': 1, 'sender_uid': 1, 'session_id': 1, 'tool': 1, 'ts': 1, 'turn': 1}
+  v1 per-turn: always null ['allowed', 'branch', 'canary_in_window', 'doc_in_window', 'latency_s', 'payload_in_window', 'result_bytes', 'seq', 'tool_calls', 'trimmed']
+  example model_turn: {"session_id": "bbx-smoke-V2A-781a4c", "seq": 1, "kind": "model_turn", "turn": 1, "ts": 1791460116.4018161, "trimmed": false, "payload_in_window": false, "canary_in_window": false, "doc_in_window": null, "latency_s": 3.32, "tool_calls": ["read_file", "run"], "host_ingest_utc": "2026-10-22T12:20:50.221171+00:00", "sender_uid": 1000, "block_hash": "333c88cd46383540257b9beb9f63eabd7fd252bac8af2e5aeba3594bf0cbcd06"}
+  example intent: {"session_id": "bbx-smoke-V2A-781a4c", "seq": 2, "kind": "intent", "turn": 1, "ts": 1791460116.4018672, "tool": "read_file", "classify": "allow", "branch": "classify_allow", "allowed": true, "host_ingest_utc": "2026-10-22T12:20:50.226426+00:00", "sender_uid": 1000, "block_hash": "3dc640c0ce2ba7c03630190b500055283f9665996c21a85f7d9814b1f8bdfca6"}
+  example result: {"session_id": "bbx-smoke-V2A-781a4c", "seq": 3, "kind": "result", "turn": 1, "ts": 1791460116.4019265, "tool": "read_file", "result_bytes": 743, "host_ingest_utc": "2026-10-22T12:20:50.240314+00:00", "sender_uid": 1000, "block_hash": "7f08835685569d1bbc66710535592b8273cef9728b923b7fedb4eed94f7ed9fc"}
+  example v1 per-turn: {"session_id": "bbx-v1-legacy", "seq": null, "kind": "v1_turn", "turn": 1, "ts": "2026-10-22T12:00:00Z", "tool": "read_file", "classify": "allow", "rule_id": "R-READ", "exit_code": 0, "host_ingest_utc": "2026-10-22T12:20:51.803377+00:00", "sender_uid": 1000, "block_hash": "443c1f8c5598e1be143b0bf915cbc52a1feca7ead79e230af77f82ac03580742"}

@@ -211,20 +211,11 @@ class ForensicCollector:
                 self.last_block_hash = current_block_hash
 
                 # 3. Write to Operational Plane (Lightweight structured JSON event)
-                operational_event = {
-                    "session_id": record.get("session_id"),
-                    "turn_id": record.get("turn_id"),
-                    "timestamp_utc": record.get("timestamp_utc"),
-                    "tool_name": record.get("proposed_action", {}).get("name"),
-                    "gate_verdict": record.get("gate_verdict", {}).get("status"),
-                    "rule_id": record.get("gate_verdict", {}).get("rule_id"),
-                    "exit_code": record.get("execution_result", {}).get("exit_code"),
-                    "host_ingest_utc": ingest_ts,
-                    "sender_uid": cred["uid"],
-                    # The operational plane is shipped off-host; its block_hash sequence
-                    # is the external anchor that verify_journal --anchor checks against.
-                    "block_hash": current_block_hash,
-                }
+                # The operational plane is shipped off-host; its block_hash sequence
+                # is the external anchor that verify_journal --anchor checks against.
+                operational_event = operational_view(record)
+                operational_event.update({"host_ingest_utc": ingest_ts, "sender_uid": cred["uid"],
+                                          "block_hash": current_block_hash})
                 op_line = json.dumps(operational_event)
                 op_f.write(op_line + "\n")
 
@@ -398,6 +389,37 @@ def content_refs(obj, prefix=""):
         for i, v in enumerate(obj):
             out.extend(content_refs(v, f"{prefix}{i}."))
     return out
+
+
+# Operational fields per record kind (schema: collector/SCHEMA.md). Metadata only:
+# no tool arguments, model text, or content hashes leave the evidentiary plane.
+OPERATIONAL_FIELDS = {
+    "model_turn": ("trimmed", "payload_in_window", "canary_in_window", "doc_in_window", "latency_s"),
+    "intent": ("tool", "classify", "branch", "allowed"),
+    "result": ("tool", "result_bytes"),
+}
+
+
+def operational_view(record: dict) -> dict:
+    """The operational event for a record, in the Volume 2 event schema. Volume 1
+    per-turn records (proposed_action / gate_verdict / execution_result) are mapped
+    onto the same names with kind "v1_turn"."""
+    if "proposed_action" in record and "kind" not in record:
+        pa = record.get("proposed_action") or {}
+        gv = record.get("gate_verdict") or {}
+        er = record.get("execution_result") or {}
+        return {"session_id": record.get("session_id"), "seq": None, "kind": "v1_turn",
+                "turn": record.get("turn_id"), "ts": record.get("timestamp_utc"),
+                "tool": pa.get("name"), "classify": gv.get("status"), "rule_id": gv.get("rule_id"),
+                "exit_code": er.get("exit_code")}
+    kind = record.get("kind")
+    ev = {"session_id": record.get("session_id"), "seq": record.get("seq"), "kind": kind,
+          "turn": record.get("turn"), "ts": record.get("ts")}
+    for k in OPERATIONAL_FIELDS.get(kind, ()):
+        ev[k] = record.get(k)
+    if kind == "model_turn":
+        ev["tool_calls"] = [c.get("name") for c in record.get("tool_calls") or [] if isinstance(c, dict)]
+    return ev
 
 
 def _recv_exact(conn, n):

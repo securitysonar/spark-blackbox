@@ -64,7 +64,7 @@ When an autonomous AI agent with tool permissions runs on production infrastruct
 ### The Four Invariants Implemented
 
 1. **Out-of-Band Append-Only Recording:** Telemetry streams synchronously over an isolated UNIX domain socket (`events.sock`) consumed by an unprivileged host daemon (`svc-audit-collector`). The agent has no read, seek, or truncate permissions over historical records.
-2. **The Decision-Turn Provenance Tuple:** Middleware captures a complete 10-field tuple for every turn: `turn_id`, `timestamp_utc`, `model_metadata`, `system_prompt_hash`, `context_delta`, `ingress_hashes`, `tool_manifest_hash`, `proposed_action`, `gate_verdict`, `execution_result`.
+2. **The Decision-Turn Provenance Tuple:** Middleware captures a complete 10-field tuple for every turn: `turn_id`, `timestamp_utc`, `model_metadata`, `system_prompt_hash`, `context_delta`, `ingress_hashes`, `tool_manifest_hash`, `proposed_action`, `gate_verdict`, `execution_result`. (This is the Volume 1 per-turn schema. Volume 2 records one event per model turn, tool intent, and tool result: see [`collector/SCHEMA.md`](collector/SCHEMA.md), which also maps the old names to the new ones.)
 3. **Cryptographic Ingress Hashing:** Ingestion tools compute a SHA-256 fingerprint of every file, URL, and API payload *before* tokens enter context. Even when context compaction purges prompt text, the entry hash remains immutable in the audit journal.
 4. **Dual-Plane Pipeline & Mass Re-Investigation:** Operational JSON events stream to SIEM/SOAR for real-time alerting; raw provenance tuples are cryptographically chained (`SHA-256(Turn_{N-1} + Turn_N)`) into an immutable WORM archive queried via DuckDB.
 
@@ -179,6 +179,8 @@ python3 analytics/reinvestigate.py
 ```
 
 ### Analytical SQL Queries (`analytics/queries.sql`)
+
+These run against the Volume 1 per-turn schema and the synthetic benchmark data above. The Volume 2 investigation queries (Part 3), over trial journals in the event schema, are in [`analytics/vol2_queries.sql`](analytics/vol2_queries.sql).
 
 **Isolate the Blast Radius of a Compromised Ingress File:**
 ```sql

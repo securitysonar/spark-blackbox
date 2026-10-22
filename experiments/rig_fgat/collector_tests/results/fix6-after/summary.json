@@ -1,0 +1,71 @@
+{
+  "label": "after",
+  "collector_sha256": "d4abdf8260861036d7e9fb8ab833ab26b2dc75c8a74ab50971bdf6752aceebbd",
+  "sent": 163,
+  "journal": 163,
+  "rejected": {},
+  "over_16k_by_kind": {},
+  "journal_identical": 163,
+  "operational_populated": {
+    "model_turn": {
+      "session_id": 34,
+      "seq": 34,
+      "kind": 34,
+      "turn": 34,
+      "ts": 34,
+      "trimmed": 34,
+      "payload_in_window": 34,
+      "canary_in_window": 34,
+      "latency_s": 34,
+      "tool_calls": 32,
+      "host_ingest_utc": 34,
+      "sender_uid": 34,
+      "block_hash": 34
+    },
+    "intent": {
+      "session_id": 64,
+      "seq": 64,
+      "kind": 64,
+      "turn": 64,
+      "ts": 64,
+      "tool": 64,
+      "classify": 64,
+      "branch": 64,
+      "allowed": 64,
+      "host_ingest_utc": 64,
+      "sender_uid": 64,
+      "block_hash": 64
+    },
+    "result": {
+      "session_id": 64,
+      "seq": 64,
+      "kind": 64,
+      "turn": 64,
+      "ts": 64,
+      "tool": 64,
+      "result_bytes": 64,
+      "host_ingest_utc": 64,
+      "sender_uid": 64,
+      "block_hash": 64
+    },
+    "v1 per-turn": {
+      "session_id": 1,
+      "kind": 1,
+      "turn": 1,
+      "ts": 1,
+      "tool": 1,
+      "classify": 1,
+      "rule_id": 1,
+      "exit_code": 1,
+      "host_ingest_utc": 1,
+      "sender_uid": 1,
+      "block_hash": 1
+    }
+  },
+  "operational_n": {
+    "model_turn": 34,
+    "intent": 64,
+    "result": 64,
+    "v1 per-turn": 1
+  }
+}

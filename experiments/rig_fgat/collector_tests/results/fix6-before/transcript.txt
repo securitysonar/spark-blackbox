@@ -1,0 +1,22 @@
+# Fix 6 before — 2026-10-22T12:20:46Z
+collector: 448109bb353436e2c38fc04fe7393ca5d67b8c0e71eece16490a61ce303bf619  collector_before6/collector_daemon.py
+bbx-smoke-V2A-781a4c: 110 records sent; referenced objects missing from the run store: 0
+bbx-V2A-af0fa0: 52 records sent; referenced objects missing from the run store: 0
+
+sent 163, journal 163, operational 163, rejected 0
+  records over 16 KiB by kind: {}
+journal records identical to the originals (minus _ingest/_chain): 163 of 163
+
+operational events: populated (non-null) fields by record kind
+  model_turn (n=34): populated {'block_hash': 34, 'host_ingest_utc': 34, 'sender_uid': 34, 'session_id': 34}
+  model_turn: always null ['exit_code', 'gate_verdict', 'rule_id', 'timestamp_utc', 'tool_name', 'turn_id']
+  intent (n=64): populated {'block_hash': 64, 'host_ingest_utc': 64, 'sender_uid': 64, 'session_id': 64}
+  intent: always null ['exit_code', 'gate_verdict', 'rule_id', 'timestamp_utc', 'tool_name', 'turn_id']
+  result (n=64): populated {'block_hash': 64, 'host_ingest_utc': 64, 'sender_uid': 64, 'session_id': 64}
+  result: always null ['exit_code', 'gate_verdict', 'rule_id', 'timestamp_utc', 'tool_name', 'turn_id']
+  v1 per-turn (n=1): populated {'block_hash': 1, 'exit_code': 1, 'gate_verdict': 1, 'host_ingest_utc': 1, 'rule_id': 1, 'sender_uid': 1, 'session_id': 1, 'timestamp_utc': 1, 'tool_name': 1, 'turn_id': 1}
+  v1 per-turn: always null []
+  example model_turn: {"session_id": "bbx-smoke-V2A-781a4c", "turn_id": null, "timestamp_utc": null, "tool_name": null, "gate_verdict": null, "rule_id": null, "exit_code": null, "host_ingest_utc": "2026-10-22T12:20:46.755175+00:00", "sender_uid": 1000, "block_hash": "7547613d436dba583dbd058549456594151bee0145b64f3c40492db809ad6635"}
+  example intent: {"session_id": "bbx-smoke-V2A-781a4c", "turn_id": null, "timestamp_utc": null, "tool_name": null, "gate_verdict": null, "rule_id": null, "exit_code": null, "host_ingest_utc": "2026-10-22T12:20:46.760398+00:00", "sender_uid": 1000, "block_hash": "571710bba9d3a214035fc5c69791020615561b2ee5fafdaa891b83ea818c8698"}
+  example result: {"session_id": "bbx-smoke-V2A-781a4c", "turn_id": null, "timestamp_utc": null, "tool_name": null, "gate_verdict": null, "rule_id": null, "exit_code": null, "host_ingest_utc": "2026-10-22T12:20:46.770866+00:00", "sender_uid": 1000, "block_hash": "b4be3139943d0213a2edacb8e45e36ba0d29925f6845d7af86fbbe3fe6a82266"}
+  example v1 per-turn: {"session_id": "bbx-v1-legacy", "turn_id": 1, "timestamp_utc": "2026-10-22T12:00:00Z", "tool_name": "read_file", "gate_verdict": "allow", "rule_id": "R-READ", "exit_code": 0, "host_ingest_utc": "2026-10-22T12:20:48.315457+00:00", "sender_uid": 1000, "block_hash": "ed2cfdec04e9cf55ba0664ed98722f7849b842bec6998c478c535adc1e626729"}
