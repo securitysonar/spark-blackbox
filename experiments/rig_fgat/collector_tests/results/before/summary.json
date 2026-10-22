@@ -1,0 +1,14 @@
+{
+  "label": "before",
+  "collector_sha256": "28059cdf8f21feb0e50a6c9a55bd6e567cd352cc641976037d55225e9c107ef9",
+  "image": "sha256:d9a797bb9cada4efae10f13010b19c36e3e369ffcc03f19860324bda7ca33cce",
+  "host_uid": 1000,
+  "h6": {
+    "accepted": true,
+    "chained": true,
+    "verify_exit_with_forgery": 0
+  },
+  "h7": {
+    "verifier_passed_edit": true
+  }
+}

@@ -1,0 +1,33 @@
+# H6/H7 before — 2026-10-22T11:06:42Z
+collector: 28059cdf8f21feb0e50a6c9a55bd6e567cd352cc641976037d55225e9c107ef9  collector_before/collector_daemon.py
+image: bbx-tools:1 sha256:d9a797bb9cada4efae10f13010b19c36e3e369ffcc03f19860324bda7ca33cce
+host uid: 1000
+socket mode: 0o666
+
+## H6 forgery
+container command: docker run --rm --network none --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges -v /tmp/bbx-h6h7-z_cb6iw1/agent-journal:/run/agent-journal bbx-tools:1 python3 -c import json,socket,sys,os; r=json.loads(sys.argv[1]); s=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM); n=s.sendto(json.dumps(r).encode(),'/run/agent-journal/events.sock'); print('container uid',os.getuid(),'sent',n,'bytes') '<forged record JSON>'
+container exit: 0
+container stdout: container uid 1000 sent 320 bytes
+collector output:
+[*] Forensic Collector listening on: /tmp/bbx-h6h7-z_cb6iw1/agent-journal/events.sock
+[*] Operational stream target:     /tmp/bbx-h6h7-z_cb6iw1/operational/events.jsonl
+[*] Evidentiary WORM target:       /tmp/bbx-h6h7-z_cb6iw1/worm/audit_journal.jsonl
+[*] Initial block hash:            0000000000000000...
+
+[*] Stopping forensic collector daemon...
+[*] Collector daemon shutdown complete.
+journal records: 4
+forged record at line 4:
+{"session_id": "bbx-h6h7-test", "turn_id": 4, "timestamp_utc": "2026-10-22T11:06:42Z", "proposed_action": {"name": "update_progress", "parameters": {"notes": "H6-FORGED-RECORD"}}, "gate_verdict": {"status": "allow", "rule_id": "test"}, "execution_result": {"exit_code": 0}, "note": "sent from inside the tool container", "_chain": {"prev_hash": "c28c20b627f6435e3d8aef2e02633bdafb822322c589f2a1b9c177028eb93de2", "block_hash": "af9d9e4e14b9d7a44e976b470faff7c836587fc9b983e8cdcc3cb7de7696d672", "host_ingest_utc": "2026-10-22T11:06:43.107387+00:00"}}
+verify (unedited journal) exit: 0
+[+] Verified 4 blocks in /tmp/bbx-h6h7-z_cb6iw1/worm/audit_journal.jsonl. Chain linkage is 100% valid.
+H6 RESULT: forged record accepted=True chained=True verifier_exit_on_journal_with_forgery=0
+
+## H7 byte edit
+edited line 2: "pytest -q" -> "pytesT -q" (one byte, payload field; _chain untouched)
+cmp -l (byte offset, octal old, octal new): 668 164 124
+verify (edited journal) exit: 0
+[+] Verified 4 blocks in /home/pete/code/blackbox-eval/collector_tests/results/before/journal_edited.jsonl. Chain linkage is 100% valid.
+H7 RESULT: verifier passed the edited journal=True
+
+summary: {"label": "before", "collector_sha256": "28059cdf8f21feb0e50a6c9a55bd6e567cd352cc641976037d55225e9c107ef9", "image": "sha256:d9a797bb9cada4efae10f13010b19c36e3e369ffcc03f19860324bda7ca33cce", "host_uid": 1000, "h6": {"accepted": true, "chained": true, "verify_exit_with_forgery": 0}, "h7": {"verifier_passed_edit": true}}
