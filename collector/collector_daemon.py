@@ -21,15 +21,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-# Support importing PcapWriter if available
-try:
-    from wireshark.pcap_writer import PcapWriter
-except ImportError:
-    try:
-        from pcap_writer import PcapWriter
-    except ImportError:
-        PcapWriter = None
-
 
 class ForensicCollector:
     def __init__(
@@ -38,7 +29,6 @@ class ForensicCollector:
         operational_path: str = "/var/log/agent-operational/events.jsonl",
         worm_path: str = "/var/log/agent-worm/audit_journal.jsonl",
         udp_mirror: Optional[str] = None,
-        pcap_path: Optional[str] = None,
         allow_uids: Optional[set] = None,
         rejects_path: Optional[str] = None,
         store_dir: Optional[str] = None,
@@ -49,8 +39,11 @@ class ForensicCollector:
         self.socket_path = socket_path
         self.operational_path = operational_path
         self.worm_path = worm_path
+        # The UDP mirror carries the operational event only: the same line written to
+        # the operational file, so a capture of it is a second off-host copy of the
+        # anchor. Record content and provenance stay on the evidentiary plane.
+        # Captures come from tcpdump, not from the collector.
         self.udp_mirror = udp_mirror
-        self.pcap_path = pcap_path
         # Senders are authenticated by the UID the kernel attaches to each datagram
         # (SO_PASSCRED / SCM_CREDENTIALS), not by anything in the payload. Only the
         # harness UID belongs here; tool sandboxes must run under a different UID.
@@ -75,7 +68,6 @@ class ForensicCollector:
         self.running = False
         self.sock = None
         self.udp_sock = None
-        self.pcap_writer = None
 
         if self.udp_mirror:
             host, port_str = self.udp_mirror.split(":")
@@ -83,13 +75,6 @@ class ForensicCollector:
             self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         else:
             self.udp_target = None
-
-        if self.pcap_path:
-            if PcapWriter is None:
-                print("[-] WARNING: PcapWriter module unavailable. PCAP output disabled.")
-            else:
-                Path(self.pcap_path).parent.mkdir(parents=True, exist_ok=True)
-                self.pcap_writer = PcapWriter(self.pcap_path)
 
     def _init_storage(self):
         Path(self.operational_path).parent.mkdir(parents=True, exist_ok=True)
@@ -240,30 +225,15 @@ class ForensicCollector:
                     # is the external anchor that verify_journal --anchor checks against.
                     "block_hash": current_block_hash,
                 }
-                op_f.write(json.dumps(operational_event) + "\n")
+                op_line = json.dumps(operational_event)
+                op_f.write(op_line + "\n")
 
-                # 4. Mirror full 10-tuple over UDP if configured (e.g. for Wireshark live capture)
-                full_turn_bytes = json.dumps(record).encode("utf-8")
+                # 4. Mirror the operational event (not the record) over UDP if configured.
                 if self.udp_sock and self.udp_target:
                     try:
-                        self.udp_sock.sendto(full_turn_bytes, self.udp_target)
+                        self.udp_sock.sendto(op_line.encode("utf-8"), self.udp_target)
                     except Exception as e:
                         print(f"[-] UDP mirror error: {e}", file=sys.stderr)
-
-                # 5. Record frame to PCAP file if configured
-                if self.pcap_writer:
-                    try:
-                        dst_port = self.udp_target[1] if self.udp_target else 9999
-                        self.pcap_writer.write_udp_packet(
-                            full_turn_bytes,
-                            src_port=54321,
-                            dst_port=dst_port,
-                        )
-                    except Exception as e:
-                        print(f"[-] PCAP write error: {e}", file=sys.stderr)
-
-        if self.pcap_writer:
-            self.pcap_writer.close()
 
         blob_thread.join(timeout=5)
         self.rej_f.close()
@@ -468,9 +438,9 @@ def main():
     parser.add_argument("--worm", default=os.getenv("FGAT_WORM", "/var/log/agent-worm/audit_journal.jsonl"),
                         help="Path to evidentiary WORM archive")
     parser.add_argument("--udp-mirror", default=os.getenv("FGAT_UDP_MIRROR", None),
-                        help="Mirror full 10-tuple turns over UDP (e.g. 127.0.0.1:9999 for Wireshark)")
-    parser.add_argument("--pcap", default=os.getenv("FGAT_PCAP", None),
-                        help="Path to write standard libpcap .pcap file for Wireshark analysis")
+                        help="Mirror each operational event over UDP (e.g. 127.0.0.1:9999). "
+                             "Capture it with tcpdump: tcpdump -i lo -nn -s0 -U -w FILE udp port 9999")
+    parser.add_argument("--pcap", default=os.getenv("FGAT_PCAP", None), help=argparse.SUPPRESS)
     parser.add_argument("--allow-uid", type=int, action="append",
                         default=[int(u) for u in os.getenv("FGAT_ALLOW_UIDS", "").split(",") if u],
                         help="Sender UID to accept (repeatable). Default: the collector's own UID")
@@ -488,6 +458,9 @@ def main():
                         help="Reject records larger than this; content belongs in the store")
 
     args = parser.parse_args()
+    if args.pcap:
+        parser.error("--pcap was removed: frames the collector writes itself are not a capture. "
+                     "Use --udp-mirror and capture with tcpdump -i lo -nn -s0 -U -w FILE udp port 9999")
 
     if args.verify:
         sys.exit(0 if verify_journal(args.worm, args.anchor, args.store) else 1)
@@ -497,7 +470,6 @@ def main():
             operational_path=args.operational,
             worm_path=args.worm,
             udp_mirror=args.udp_mirror,
-            pcap_path=args.pcap,
             allow_uids=set(args.allow_uid) or None,
             rejects_path=args.rejects,
             store_dir=args.store,

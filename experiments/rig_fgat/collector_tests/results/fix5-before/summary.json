@@ -1,0 +1,33 @@
+{
+  "label": "before",
+  "collector_sha256": "c28ff78c4e25f47cbd9fc31521b5378114b33ac5ca562b6768b5c2f142d0c3a2",
+  "M1-M2": {
+    "operational_lines": 3,
+    "real_frames": 3,
+    "payload_keys": [
+      "_chain",
+      "_ingest",
+      "execution_result",
+      "gate_verdict",
+      "proposed_action",
+      "session_id",
+      "timestamp_utc",
+      "turn_id"
+    ],
+    "payload_has_tool_args": true,
+    "payload_has_provenance": true,
+    "payloads_equal_operational_lines": false,
+    "collector_pcap_frames": 3,
+    "timestamp_offsets_us": [
+      -20,
+      -23,
+      -20
+    ],
+    "payloads_equal_real": true
+  },
+  "M3": {
+    "operational_lines": 3,
+    "real_frames": 0,
+    "collector_pcap_frames": 3
+  }
+}

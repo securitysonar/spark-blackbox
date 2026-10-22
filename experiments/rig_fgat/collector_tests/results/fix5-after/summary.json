@@ -1,0 +1,28 @@
+{
+  "label": "after",
+  "collector_sha256": "448109bb353436e2c38fc04fe7393ca5d67b8c0e71eece16490a61ce303bf619",
+  "M1-M2": {
+    "operational_lines": 3,
+    "real_frames": 3,
+    "payload_keys": [
+      "block_hash",
+      "exit_code",
+      "gate_verdict",
+      "host_ingest_utc",
+      "rule_id",
+      "sender_uid",
+      "session_id",
+      "timestamp_utc",
+      "tool_name",
+      "turn_id"
+    ],
+    "payload_has_tool_args": false,
+    "payload_has_provenance": false,
+    "payloads_equal_operational_lines": true
+  },
+  "M3": {
+    "collector_exit": 2,
+    "operational_lines": 0,
+    "real_frames": 0
+  }
+}

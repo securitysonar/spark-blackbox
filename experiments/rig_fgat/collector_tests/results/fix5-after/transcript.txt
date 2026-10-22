@@ -1,0 +1,28 @@
+# Fix 5 after — 2026-10-22T12:04:01Z
+collector: 448109bb353436e2c38fc04fe7393ca5d67b8c0e71eece16490a61ce303bf619  collector/collector_daemon.py
+tcpdump: tcpdump version 4.99.4
+sudo -n available for tcpdump: True
+
+## M1-M2: mirror=True --pcap=no
+tcpdump: tcpdump: listening on lo, link-type EN10MB (Ethernet), snapshot length 262144 bytes | 3 packets captured | 6 packets received by filter | 0 packets dropped by kernel
+real capture (tcpdump, linktype 1): 3 UDP frames to port 9999
+  1792670643.544675 53651->9999 ip_id=25753 331 bytes keys=['block_hash', 'exit_code', 'gate_verdict', 'host_ingest_utc', 'rule_id', 'sender_uid', 'session_id', 'timestamp_utc', 'tool_name', 'turn_id']
+  1792670643.760361 53651->9999 ip_id=25958 329 bytes keys=['block_hash', 'exit_code', 'gate_verdict', 'host_ingest_utc', 'rule_id', 'sender_uid', 'session_id', 'timestamp_utc', 'tool_name', 'turn_id']
+  1792670643.979437 53651->9999 ip_id=26023 333 bytes keys=['block_hash', 'exit_code', 'gate_verdict', 'host_ingest_utc', 'rule_id', 'sender_uid', 'session_id', 'timestamp_utc', 'tool_name', 'turn_id']
+  first payload: {"session_id": "bbx-fix5-test", "turn_id": 1, "timestamp_utc": "2026-10-22T12:04:03Z", "tool_name": "read_file", "gate_verdict": "allow", "rule_id": "R-READ", "exit_code": 0, "host_ingest_utc": "2026-10-22T12:04:03.544433+00:00", "sender_uid": 1000, "block_hash": "19b18dbaaf6fbcd3b0aba37178bb614336f4731dc2f1634e64697d3cbb2880e5"}
+  payloads byte-identical to operational lines: True
+
+## M3: mirror=False --pcap=yes
+collector exited at startup: 2
+usage: collector_daemon.py [-h] [--socket SOCKET] [--operational OPERATIONAL]
+                           [--worm WORM] [--udp-mirror UDP_MIRROR]
+                           [--allow-uid ALLOW_UID] [--rejects REJECTS]
+                           [--verify] [--anchor ANCHOR] [--store STORE]
+                           [--blob-socket BLOB_SOCKET]
+                           [--max-record-bytes MAX_RECORD_BYTES]
+collector_daemon.py: error: --pcap was removed: frames the collector writes itself are not a capture. Use --udp-mirror and capture with tcpdump -i lo -nn -s0 -U -w FILE udp port 9999
+tcpdump: tcpdump: listening on lo, link-type EN10MB (Ethernet), snapshot length 262144 bytes | 0 packets captured | 0 packets received by filter | 0 packets dropped by kernel
+real capture (tcpdump, linktype 1): 0 UDP frames to port 9999
+collector --pcap file: not written
+
+summary: {"label": "after", "collector_sha256": "448109bb353436e2c38fc04fe7393ca5d67b8c0e71eece16490a61ce303bf619", "M1-M2": {"operational_lines": 3, "real_frames": 3, "payload_keys": ["block_hash", "exit_code", "gate_verdict", "host_ingest_utc", "rule_id", "sender_uid", "session_id", "timestamp_utc", "tool_name", "turn_id"], "payload_has_tool_args": false, "payload_has_provenance": false, "payloads_equal_operational_lines": true}, "M3": {"collector_exit": 2, "operational_lines": 0, "real_frames": 0}}

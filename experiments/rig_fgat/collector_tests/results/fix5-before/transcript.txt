@@ -1,0 +1,33 @@
+# Fix 5 before — 2026-10-22T12:03:49Z
+collector: c28ff78c4e25f47cbd9fc31521b5378114b33ac5ca562b6768b5c2f142d0c3a2  collector_before5/collector_daemon.py
+tcpdump: tcpdump version 4.99.4
+sudo -n available for tcpdump: True
+
+## M1-M2: mirror=True --pcap=yes
+tcpdump: tcpdump: listening on lo, link-type EN10MB (Ethernet), snapshot length 262144 bytes | 3 packets captured | 6 packets received by filter | 0 packets dropped by kernel
+real capture (tcpdump, linktype 1): 3 UDP frames to port 9999
+  1792670631.463715 37782->9999 ip_id=16933 648 bytes keys=['_chain', '_ingest', 'execution_result', 'gate_verdict', 'proposed_action', 'session_id', 'timestamp_utc', 'turn_id']
+  1792670631.679668 37782->9999 ip_id=17087 676 bytes keys=['_chain', '_ingest', 'execution_result', 'gate_verdict', 'proposed_action', 'session_id', 'timestamp_utc', 'turn_id']
+  1792670631.897868 37782->9999 ip_id=17235 650 bytes keys=['_chain', '_ingest', 'execution_result', 'gate_verdict', 'proposed_action', 'session_id', 'timestamp_utc', 'turn_id']
+  first payload: {"execution_result": {"exit_code": 0, "stdout_sha256": "7eaf5ef9929a30089e37d8e17d4306f5dc8e4da07bea8e4f12dd02b9045aa6e1"}, "gate_verdict": {"rule_id": "R-READ", "status": "allow"}, "proposed_action": {"args": {"path": "config/.env"}, "name": "read_file"}, "session_id": "bbx-fix5-test", "timestamp_utc": "2026-10-22T12:03:51Z", "turn_id": 1, "_ingest": {"host_ingest_utc": "2026-10-22T12:03:51.463444+00:00", "sender_uid": 1000, "sender_pid": 1010486, "sender_gid": 1000}, "_chain": {"prev_hash": "0000000000000000000000000000000000000000000000000000000000000000", "block_hash": "731e9a087a106415d74
+  payloads byte-identical to operational lines: False
+collector --pcap file (linktype 1): 3 UDP frames
+  1792670631.463735 54321->9999 ip_id=54321 648 bytes
+  1792670631.679691 54321->9999 ip_id=54321 676 bytes
+  1792670631.897888 54321->9999 ip_id=54321 650 bytes
+  frames: collector file 3 vs real capture 3
+  source ports: file [54321] real [37782]
+  IP IDs: file [54321] real [16933, 17087, 17235]
+  timestamp offset real-minus-file (µs): [-20, -23, -20]
+  payloads identical to real capture: True
+
+## M3: mirror=False --pcap=yes
+tcpdump: tcpdump: listening on lo, link-type EN10MB (Ethernet), snapshot length 262144 bytes | 0 packets captured | 0 packets received by filter | 0 packets dropped by kernel
+real capture (tcpdump, linktype 1): 0 UDP frames to port 9999
+collector --pcap file (linktype 1): 3 UDP frames
+  1792670637.486815 54321->9999 ip_id=54321 648 bytes
+  1792670637.703004 54321->9999 ip_id=54321 676 bytes
+  1792670637.921200 54321->9999 ip_id=54321 650 bytes
+  frames: collector file 3 vs real capture 0
+
+summary: {"label": "before", "collector_sha256": "c28ff78c4e25f47cbd9fc31521b5378114b33ac5ca562b6768b5c2f142d0c3a2", "M1-M2": {"operational_lines": 3, "real_frames": 3, "payload_keys": ["_chain", "_ingest", "execution_result", "gate_verdict", "proposed_action", "session_id", "timestamp_utc", "turn_id"], "payload_has_tool_args": true, "payload_has_provenance": true, "payloads_equal_operational_lines": false, "collector_pcap_frames": 3, "timestamp_offsets_us": [-20, -23, -20], "payloads_equal_real": true}, "M3": {"operational_lines": 3, "real_frames": 0, "collector_pcap_frames": 3}}
