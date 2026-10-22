@@ -1,0 +1,29 @@
+{
+  "label": "before",
+  "acks": false,
+  "A1 accepted": {
+    "returned": 190,
+    "seconds": 0.0
+  },
+  "A2 oversize": {
+    "returned": 40181,
+    "seconds": 0.0
+  },
+  "A3 unknown ref": {
+    "returned": 273,
+    "seconds": 0.0
+  },
+  "A4 malformed": {
+    "reply": "client cannot receive"
+  },
+  "A5 collector stopped": {
+    "returned": 190,
+    "seconds": 0.0
+  },
+  "A10 no collector": {
+    "raised": "record send to /tmp/bbx-ack-00dpc6ib/events.sock failed: [Errno 2] No such file or directory",
+    "seconds": 0.0
+  },
+  "A5 chained after resume": true,
+  "A8 chained": true
+}

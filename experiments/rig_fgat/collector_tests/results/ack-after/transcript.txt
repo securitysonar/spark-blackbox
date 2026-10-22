@@ -1,0 +1,56 @@
+# Ack test after — 2026-10-22T13:02:55Z
+collector: 047ee37979c9b649f58070c82cf6cffc764dc8e54d1c29e88fee91a8a634aaaf  client: c158579acb18d3e013cc8effdb939fe289be4bd2d842f3b9475e10e0ee617680  client waits for reply: True
+
+## A1 accepted record
+[A1 accepted] returned '986a44dd318dc1e62d0f7bbee36e5d37ee73df188e97cecc65e884e8134c0dce' (0.00s)
+
+## A2 record over the size limit
+[A2 oversize] RecorderError: collector rejected the record: record of 40181 bytes exceeds 16384 (put content in the store and send its hash) (0.00s)
+
+## A3 record citing content never stored
+[A3 unknown ref] RecorderError: collector rejected the record: references content not in the store: ['b68565cf5699273f6a21847b3fe44726374cbd6c3bfdc829527f1db2a0504341'] (0.00s)
+
+## A4 malformed payload on the client's own connection
+[A4 malformed] reply: ERR 92628a747890d02d1459c6eb45fd13cfa63bbb6d346412cff190297cf9c33d39 malformed record: Expecting value: line 1 column 1 (char 0)
+
+## A5 collector stopped while a record is sent
+[A5 collector stopped] RecorderError: no reply from the collector within 2.0s for record 194e5d56989bcdab...; it may or may not be recorded, so treat it as not (2.00s)
+
+## A6 next emit after the timeout
+[A6 next emit] returned '2c6efa4a7f456e8857030dbe4949f9b885469cabb69553e713c139a7a2e857da' (0.00s)
+
+## A7 tool container connects to the records socket
+[A7 container, socket mode 0o660] failed: [Errno 13] Permission denied
+[A7 container, socket mode 0o666] reply: ERR 887e0265201b62c1ead9cff5d1f41e0b8c347b02b94932f644c3938ff7d9ec10 sender uid not allowed
+
+## A8 legacy datagram sender
+[A8 legacy] sendto returned 190; no reply path
+
+## A9 a client that never reads its replies
+mute client sent 446 records in 3s without reading replies (blocked by backpressure)
+[A9 normal client during flood] returned 'c731c68905ee6ebe128ae61c880a1e05dc16a84a6208587ed79d0267ca057796' (0.00s)
+mute client then read 446 replies
+
+## A10 collector not running
+[A10 no collector] RecorderError: record send failed: [Errno 32] Broken pipe (0.00s)
+
+journal: 451 records; seqs (first 10): [1, 5, 6, 8, 10000, 10001, 10002, 10003, 10004, 10005]; rejected: 4
+  rejected: record of 40181 bytes exceeds 16384 (put content in the store and send its hash)
+  rejected: references content not in the store: ['b68565cf5699273f6a21847b3fe44726374cbd6c3bfdc829527f1db2a0504
+  rejected: malformed record: Expecting value: line 1 column 1 (char 0)
+  rejected: sender uid not allowed
+A1 block_hash returned by emit() equals the journal's: True
+A6 record chained: True
+A5 record chained after the collector resumed: True
+A8 legacy sender's record chained: True
+A9 flood records chained: 446
+
+collector output (tail):
+[*] Evidentiary WORM target:       /tmp/bbx-ack-ctuaa4y7/worm/audit_journal.jsonl
+[*] Initial block hash:            0000000000000000...
+[*] Accepted sender UIDs:          [1000]
+[*] Content store:                 /tmp/bbx-ack-ctuaa4y7/worm/store (blob socket /tmp/bbx-ack-ctuaa4y7/blobs.sock)
+[*] Max record bytes:              16384
+
+[*] Stopping forensic collector daemon...
+[*] Collector daemon shutdown complete.

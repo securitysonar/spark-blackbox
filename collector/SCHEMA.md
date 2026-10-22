@@ -70,6 +70,31 @@ The collector removes any sender-supplied `_chain` and sets:
 | `_ingest.sender_uid`, `sender_pid`, `sender_gid` | Sender credentials from the kernel (SCM_CREDENTIALS) |
 | `_chain.prev_hash`, `_chain.block_hash` | `block_hash = SHA-256(prev_hash ‖ canonical JSON of the record incl. _ingest)` |
 
+## Transport and acknowledgment
+
+| Socket (default dir `/run/agent-journal/`) | Type | Purpose | Reply |
+| --- | --- | --- | --- |
+| `records.sock` | `SOCK_SEQPACKET` | Records from `FgatClient.emit()` | One per record, on the same connection |
+| `blobs.sock` | `SOCK_STREAM` | Content from `FgatClient.put()` | The SHA-256 the collector computed |
+| `events.sock` | `SOCK_DGRAM` | Legacy records | None |
+
+All three are mode 0660 and accept only the allowed UIDs (kernel credentials:
+`SO_PEERCRED` at connect, `SCM_CREDENTIALS` per datagram).
+
+Record replies: `OK <payload sha256> <block_hash>` once the record is chained,
+or `ERR <payload sha256> <reason>` (sender not allowed, over the size limit,
+malformed, or referencing content not in the store). `emit()` returns the
+block hash or raises `RecorderError`; it also raises if no reply arrives within
+`ack_timeout` (default 5 s). A timeout means unknown, not rejected: the
+collector may chain the record later. The caller must treat any raise as "not
+recorded"; for an intent record, the tool doesn't run.
+
+A client that stops reading replies stalls only its own connection: the
+collector holds the pending reply and stops reading from that connection until
+it can send it. (An earlier design replied over the datagram socket; one
+client that never read its replies used up the collector's send buffer and
+blocked replies to every client.)
+
 ## Operational events
 
 One per accepted record, written to the operational file and, if configured,

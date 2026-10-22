@@ -1,0 +1,46 @@
+{
+  "label": "after",
+  "acks": true,
+  "A1 accepted": {
+    "returned": "986a44dd318dc1e62d0f7bbee36e5d37ee73df188e97cecc65e884e8134c0dce",
+    "seconds": 0.0
+  },
+  "A2 oversize": {
+    "raised": "collector rejected the record: record of 40181 bytes exceeds 16384 (put content in the store and send its hash)",
+    "seconds": 0.0
+  },
+  "A3 unknown ref": {
+    "raised": "collector rejected the record: references content not in the store: ['b68565cf5699273f6a21847b3fe44726374cbd6c3bfdc829527f1db2a0504341']",
+    "seconds": 0.0
+  },
+  "A4 malformed": {
+    "reply": "ERR 92628a747890d02d1459c6eb45fd13cfa63bbb6d346412cff190297cf9c33d39 malformed record: Expecting value: line 1 column 1 (char 0)"
+  },
+  "A5 collector stopped": {
+    "raised": "no reply from the collector within 2.0s for record 194e5d56989bcdab...; it may or may not be recorded, so treat it as not",
+    "seconds": 2.0
+  },
+  "A6 next emit": {
+    "returned": "2c6efa4a7f456e8857030dbe4949f9b885469cabb69553e713c139a7a2e857da",
+    "seconds": 0.0
+  },
+  "A7 container": [
+    "failed: [Errno 13] Permission denied",
+    "reply: ERR 887e0265201b62c1ead9cff5d1f41e0b8c347b02b94932f644c3938ff7d9ec10 sender uid not allowed"
+  ],
+  "A9 mute sent": 446,
+  "A9 normal client during flood": {
+    "returned": "c731c68905ee6ebe128ae61c880a1e05dc16a84a6208587ed79d0267ca057796",
+    "seconds": 0.0
+  },
+  "A9 mute replies read": 446,
+  "A10 no collector": {
+    "raised": "record send failed: [Errno 32] Broken pipe",
+    "seconds": 0.0
+  },
+  "A1 matches journal": true,
+  "A6 chained": true,
+  "A5 chained after resume": true,
+  "A8 chained": true,
+  "A9 flood records chained": 446
+}

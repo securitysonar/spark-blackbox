@@ -2,8 +2,18 @@
 
 put() sends content to the collector's store over the blob socket and returns the
 SHA-256 the collector computed (checked against a local hash). emit() sends a
-small record over the datagram socket. Both raise on failure: if the recorder
-can't take a record, the caller should stop, not carry on unrecorded.
+small record over the datagram socket and waits for the collector's verdict:
+it returns the record's block_hash once the record is chained, and raises if
+the collector rejected it or didn't answer in time. Both raise on failure: if
+the recorder can't take a record, the caller should stop, not carry on
+unrecorded. For an intent record, that means the tool doesn't run.
+
+Records go over one SOCK_SEQPACKET connection to the collector's records
+socket, and each reply comes back on the same connection, so nothing else can
+answer for the collector. A reply counts only if it names the SHA-256 of the
+record just sent. After a timeout the connection is dropped, since a late reply
+could otherwise be read as the answer to the next record. A timeout means
+"unknown", not "rejected": the collector may still chain the record later.
 
 Records carry content only by reference: put the content first, then put its
 hash in a field whose name ends in _sha256. The collector rejects records that
@@ -11,6 +21,7 @@ reference content it didn't store, and records over its size limit.
 """
 import hashlib
 import json
+import os
 import socket
 import struct
 
@@ -25,11 +36,17 @@ def canonical(obj) -> bytes:
 
 class FgatClient:
     def __init__(self, socket_path="/run/agent-journal/events.sock",
-                 blob_socket_path="/run/agent-journal/blobs.sock", max_record_bytes=16384):
+                 blob_socket_path=None, max_record_bytes=16384, ack_timeout=5.0,
+                 records_socket_path=None):
+        # socket_path is the collector's legacy datagram socket; the records and
+        # blob sockets default to the same directory.
+        sock_dir = os.path.dirname(socket_path)
         self.socket_path = socket_path
-        self.blob_socket_path = blob_socket_path
+        self.records_socket_path = records_socket_path or os.path.join(sock_dir, "records.sock")
+        self.blob_socket_path = blob_socket_path or os.path.join(sock_dir, "blobs.sock")
         self.max_record_bytes = max_record_bytes
-        self._dgram = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        self.ack_timeout = ack_timeout
+        self._rec = None
         self._blob = None
 
     def _blob_conn(self):
@@ -59,17 +76,53 @@ class FgatClient:
             raise RecorderError(f"collector stored {reply!r}, expected {local}")
         return local
 
-    def emit(self, record: dict) -> int:
+    def emit(self, record: dict) -> str:
+        """Send a record; return its block_hash once the collector has chained it."""
         data = canonical(record)
         if len(data) > self.max_record_bytes:
             raise RecorderError(f"record is {len(data)} bytes (limit {self.max_record_bytes}); "
                                 "put large fields in the store and send their hash")
+        digest = hashlib.sha256(data).hexdigest()
+        if self._rec is None:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+            try:
+                s.connect(self.records_socket_path)
+            except OSError as e:
+                s.close()
+                raise RecorderError(f"records socket {self.records_socket_path}: {e}") from e
+            self._rec = s
+        self._rec.settimeout(self.ack_timeout)
         try:
-            return self._dgram.sendto(data, self.socket_path)
+            self._rec.send(data)
+            reply = self._rec.recv(4096)
+        except socket.timeout:
+            self._close_rec()
+            raise RecorderError(f"no reply from the collector within {self.ack_timeout}s for record "
+                                f"{digest[:16]}...; it may or may not be recorded, so treat it as not")
         except OSError as e:
-            raise RecorderError(f"record send to {self.socket_path} failed: {e}") from e
+            self._close_rec()
+            raise RecorderError(f"record send failed: {e}") from e
+        if not reply:
+            self._close_rec()
+            raise RecorderError("collector closed the connection without replying")
+        status, _, rest = reply.decode("utf-8", "replace").partition(" ")
+        got, _, detail = rest.partition(" ")
+        if got != digest:
+            self._close_rec()
+            raise RecorderError(f"reply names record {got[:16]}..., expected {digest[:16]}...")
+        if status == "OK":
+            return detail
+        raise RecorderError(f"collector rejected the record: {detail}")
+
+    def _close_rec(self):
+        if self._rec is not None:
+            try:
+                self._rec.close()
+            finally:
+                self._rec = None
 
     def close(self):
+        self._close_rec()
         if self._blob is not None:
             try:
                 self._blob_reader.close()

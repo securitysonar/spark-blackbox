@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import selectors
 import signal
 import socket
 import struct
@@ -33,6 +34,7 @@ class ForensicCollector:
         rejects_path: Optional[str] = None,
         store_dir: Optional[str] = None,
         blob_socket_path: Optional[str] = None,
+        records_socket_path: Optional[str] = None,
         max_record_bytes: int = 16384,
         max_blob_bytes: int = 64 * 1024 * 1024,
     ):
@@ -55,6 +57,8 @@ class ForensicCollector:
         # reference content this collector stored, and it must stay small.
         self.store_dir = store_dir or os.path.join(os.path.dirname(worm_path), "store")
         self.blob_socket_path = blob_socket_path or os.path.join(os.path.dirname(socket_path), "blobs.sock")
+        self.records_socket_path = records_socket_path or os.path.join(os.path.dirname(socket_path), "records.sock")
+        self.rec_sock = None
         # Partial writes land here and are renamed into the store, so the store
         # directory itself can be append-only (chattr +a forbids renaming or
         # deleting entries in it, but not creating them).
@@ -102,6 +106,8 @@ class ForensicCollector:
         if os.path.exists(self.socket_path):
             os.remove(self.socket_path)
 
+        # Legacy datagram socket: records are chained, but the sender gets no reply.
+        # Kept for senders that don't use fgat_client (and for the H6/H7 tests).
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
         self.sock.bind(self.socket_path)
         # Owner and group only. The UID check below is the real control; the mode
@@ -112,6 +118,20 @@ class ForensicCollector:
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1048576)
         except OSError:
             pass
+        self.sock.setblocking(False)
+
+        # Acknowledged records: one SOCK_SEQPACKET connection per client. Each record
+        # gets a reply on its connection: "OK <payload sha256> <block_hash>" once it is
+        # chained, or "ERR <payload sha256> <reason>". Every connection has its own
+        # buffers, so a client that stops reading replies stalls only itself: the
+        # collector stops reading from that connection until the reply goes out.
+        if os.path.exists(self.records_socket_path):
+            os.remove(self.records_socket_path)
+        self.rec_sock = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        self.rec_sock.bind(self.records_socket_path)
+        os.chmod(self.records_socket_path, 0o660)
+        self.rec_sock.listen(16)
+        self.rec_sock.setblocking(False)
 
         if os.path.exists(self.blob_socket_path):
             os.remove(self.blob_socket_path)
@@ -134,7 +154,8 @@ class ForensicCollector:
             except (ValueError, AttributeError):
                 pass
 
-        print(f"[*] Forensic Collector listening on: {self.socket_path}")
+        print(f"[*] Forensic Collector listening on: {self.records_socket_path} (acknowledged)")
+        print(f"[*] Legacy datagram socket:        {self.socket_path} (no replies)")
         print(f"[*] Operational stream target:     {self.operational_path}")
         print(f"[*] Evidentiary WORM target:       {self.worm_path}")
         print(f"[*] Initial block hash:            {self.last_block_hash[:16]}...")
@@ -146,95 +167,173 @@ class ForensicCollector:
         blob_thread = threading.Thread(target=self._serve_blobs, daemon=True)
         blob_thread.start()
 
+        sel = selectors.DefaultSelector()
+        sel.register(self.sock, selectors.EVENT_READ, ("dgram", None))
+        sel.register(self.rec_sock, selectors.EVENT_READ, ("listen", None))
+        # Per connection: [sender credentials, pending reply bytes or None]
+        conns = {}
+
         with open(self.worm_path, "a", buffering=1, encoding="utf-8") as worm_f, \
              open(self.operational_path, "a", buffering=1, encoding="utf-8") as op_f:
+            self._worm_f, self._op_f = worm_f, op_f
 
             while self.running:
-                try:
-                    self.sock.settimeout(1.0)
-                    # Read past the record limit so oversize records are measured, not cut
-                    # off; MSG_TRUNC flags anything longer than even this buffer.
-                    data, ancdata, msg_flags, _ = self.sock.recvmsg(
-                        RECV_BUFFER, socket.CMSG_SPACE(UCRED.size))
-                except socket.timeout:
-                    continue
-                except Exception as e:
-                    if self.running:
-                        print(f"[-] Socket read error: {e}", file=sys.stderr)
-                    break
+                for key, events in sel.select(timeout=1.0):
+                    kind, _ = key.data
+                    if kind == "dgram":
+                        self._read_datagrams()
+                    elif kind == "listen":
+                        self._accept(sel, conns)
+                    elif events & selectors.EVENT_WRITE:
+                        self._flush_reply(sel, conns, key.fileobj)
+                    else:
+                        self._read_record(sel, conns, key.fileobj)
 
-                if not data:
-                    continue
-
-                ingest_ts = datetime.now(timezone.utc).isoformat()
-                cred = sender_credentials(ancdata)
-                if cred is None or cred["uid"] not in self.allow_uids:
-                    # Not chained. Kept as evidence of the attempt.
-                    self._reject(ingest_ts, cred, "no credentials" if cred is None else "sender uid not allowed",
-                                 data, channel="record")
-                    continue
-                if msg_flags & socket.MSG_TRUNC or len(data) > self.max_record_bytes:
-                    size = f"over {RECV_BUFFER}" if msg_flags & socket.MSG_TRUNC else str(len(data))
-                    self._reject(ingest_ts, cred, f"record of {size} bytes exceeds {self.max_record_bytes} "
-                                 "(put content in the store and send its hash)", data, channel="record")
-                    continue
-
-                try:
-                    record = json.loads(data.decode("utf-8"))
-                    if not isinstance(record, dict):
-                        raise ValueError("record is not a JSON object")
-                except Exception as e:
-                    self._reject(ingest_ts, cred, f"malformed record: {e}", data, channel="record")
-                    continue
-
-                missing = [h for _, h in content_refs(record) if not self._stored(h)]
-                if missing:
-                    self._reject(ingest_ts, cred, f"references content not in the store: {missing}",
-                                 data, channel="record")
-                    continue
-
-                # The collector, not the sender, sets these fields.
-                record.pop("_chain", None)
-                record["_ingest"] = {"host_ingest_utc": ingest_ts, "sender_uid": cred["uid"],
-                                     "sender_pid": cred["pid"], "sender_gid": cred["gid"]}
-
-                # 1. Chain: SHA-256(H_{n-1} || canonical JSON of the record incl. _ingest).
-                #    verify_journal recomputes this from the stored line.
-                current_block_hash = block_hash(self.last_block_hash, record)
-                record["_chain"] = {
-                    "prev_hash": self.last_block_hash,
-                    "block_hash": current_block_hash,
-                }
-
-                # 2. Write to Evidentiary Plane (Complete provenance + chain)
-                worm_f.write(canonical(record).decode("utf-8") + "\n")
-                self.last_block_hash = current_block_hash
-
-                # 3. Write to Operational Plane (Lightweight structured JSON event)
-                # The operational plane is shipped off-host; its block_hash sequence
-                # is the external anchor that verify_journal --anchor checks against.
-                operational_event = operational_view(record)
-                operational_event.update({"host_ingest_utc": ingest_ts, "sender_uid": cred["uid"],
-                                          "block_hash": current_block_hash})
-                op_line = json.dumps(operational_event)
-                op_f.write(op_line + "\n")
-
-                # 4. Mirror the operational event (not the record) over UDP if configured.
-                if self.udp_sock and self.udp_target:
-                    try:
-                        self.udp_sock.sendto(op_line.encode("utf-8"), self.udp_target)
-                    except Exception as e:
-                        print(f"[-] UDP mirror error: {e}", file=sys.stderr)
-
+        for conn in list(conns):
+            sel.unregister(conn)
+            conn.close()
+        sel.close()
+        self.rec_sock.close()
         blob_thread.join(timeout=5)
         self.rej_f.close()
-        for path in (self.socket_path, self.blob_socket_path):
+        for path in (self.socket_path, self.records_socket_path, self.blob_socket_path):
             if os.path.exists(path):
                 try:
                     os.remove(path)
                 except OSError:
                     pass
         print("[*] Collector daemon shutdown complete.")
+
+    def _read_datagrams(self):
+        while True:
+            try:
+                # Read past the record limit so oversize records are measured, not cut
+                # off; MSG_TRUNC flags anything longer than even this buffer.
+                data, ancdata, msg_flags, _ = self.sock.recvmsg(RECV_BUFFER, socket.CMSG_SPACE(UCRED.size))
+            except (BlockingIOError, InterruptedError):
+                return
+            except OSError as e:
+                if self.running:
+                    print(f"[-] Socket read error: {e}", file=sys.stderr)
+                return
+            if data:
+                self._process(data, sender_credentials(ancdata), bool(msg_flags & socket.MSG_TRUNC), "record")
+
+    def _accept(self, sel, conns):
+        try:
+            conn, _ = self.rec_sock.accept()
+        except (BlockingIOError, InterruptedError):
+            return
+        raw = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, UCRED.size)
+        pid, uid, gid = UCRED.unpack(raw)
+        conn.setblocking(False)
+        conns[conn] = [{"pid": pid, "uid": uid, "gid": gid}, None]
+        sel.register(conn, selectors.EVENT_READ, ("conn", None))
+
+    def _read_record(self, sel, conns, conn):
+        try:
+            data, _, msg_flags, _ = conn.recvmsg(RECV_BUFFER)
+        except (BlockingIOError, InterruptedError):
+            return
+        except OSError:
+            data = b""
+        if not data:
+            sel.unregister(conn)
+            del conns[conn]
+            conn.close()
+            return
+        ok, digest, detail = self._process(data, conns[conn][0], bool(msg_flags & socket.MSG_TRUNC), "record-ack")
+        reply = f"{'OK' if ok else 'ERR'} {digest} {detail}".encode("utf-8")[:4096]
+        try:
+            conn.send(reply)
+        except (BlockingIOError, InterruptedError):
+            # The client isn't reading its replies. Hold this one and stop reading
+            # from the connection until it can be sent.
+            conns[conn][1] = reply
+            sel.modify(conn, selectors.EVENT_WRITE, ("conn", None))
+        except OSError:
+            sel.unregister(conn)
+            del conns[conn]
+            conn.close()
+
+    def _flush_reply(self, sel, conns, conn):
+        try:
+            conn.send(conns[conn][1])
+        except (BlockingIOError, InterruptedError):
+            return
+        except OSError:
+            sel.unregister(conn)
+            del conns[conn]
+            conn.close()
+            return
+        conns[conn][1] = None
+        sel.modify(conn, selectors.EVENT_READ, ("conn", None))
+
+    def _process(self, data, cred, truncated, channel):
+        """Validate, chain, and dispatch one record. Returns (ok, payload sha256,
+        block_hash or rejection reason)."""
+        ingest_ts = datetime.now(timezone.utc).isoformat()
+        digest = hashlib.sha256(data).hexdigest()
+        if cred is None or cred["uid"] not in self.allow_uids:
+            # Not chained. Kept as evidence of the attempt.
+            reason = "no credentials" if cred is None else "sender uid not allowed"
+            self._reject(ingest_ts, cred, reason, data, channel=channel)
+            return False, digest, reason
+        if truncated or len(data) > self.max_record_bytes:
+            size = f"over {RECV_BUFFER}" if truncated else str(len(data))
+            reason = (f"record of {size} bytes exceeds {self.max_record_bytes} "
+                      "(put content in the store and send its hash)")
+            self._reject(ingest_ts, cred, reason, data, channel=channel)
+            return False, digest, reason
+
+        try:
+            record = json.loads(data.decode("utf-8"))
+            if not isinstance(record, dict):
+                raise ValueError("record is not a JSON object")
+        except Exception as e:
+            reason = f"malformed record: {e}"
+            self._reject(ingest_ts, cred, reason, data, channel=channel)
+            return False, digest, reason
+
+        missing = [h for _, h in content_refs(record) if not self._stored(h)]
+        if missing:
+            reason = f"references content not in the store: {missing}"
+            self._reject(ingest_ts, cred, reason, data, channel=channel)
+            return False, digest, reason
+
+        # The collector, not the sender, sets these fields.
+        record.pop("_chain", None)
+        record["_ingest"] = {"host_ingest_utc": ingest_ts, "sender_uid": cred["uid"],
+                             "sender_pid": cred["pid"], "sender_gid": cred["gid"]}
+
+        # 1. Chain: SHA-256(H_{n-1} || canonical JSON of the record incl. _ingest).
+        #    verify_journal recomputes this from the stored line.
+        current_block_hash = block_hash(self.last_block_hash, record)
+        record["_chain"] = {
+            "prev_hash": self.last_block_hash,
+            "block_hash": current_block_hash,
+        }
+
+        # 2. Write to Evidentiary Plane (Complete provenance + chain)
+        self._worm_f.write(canonical(record).decode("utf-8") + "\n")
+        self.last_block_hash = current_block_hash
+
+        # 3. Write to Operational Plane (Lightweight structured JSON event)
+        # The operational plane is shipped off-host; its block_hash sequence
+        # is the external anchor that verify_journal --anchor checks against.
+        operational_event = operational_view(record)
+        operational_event.update({"host_ingest_utc": ingest_ts, "sender_uid": cred["uid"],
+                                  "block_hash": current_block_hash})
+        op_line = json.dumps(operational_event)
+        self._op_f.write(op_line + "\n")
+
+        # 4. Mirror the operational event (not the record) over UDP if configured.
+        if self.udp_sock and self.udp_target:
+            try:
+                self.udp_sock.sendto(op_line.encode("utf-8"), self.udp_target)
+            except Exception as e:
+                print(f"[-] UDP mirror error: {e}", file=sys.stderr)
+        return True, digest, current_block_hash
 
     def _reject(self, ingest_ts, cred, reason, data, channel):
         rej = {"host_ingest_utc": ingest_ts, "channel": channel, "sender": cred, "reason": reason,
@@ -474,6 +573,8 @@ def main():
     parser.add_argument("--store", default=os.getenv("FGAT_STORE", None),
                         help="Content-addressed store directory (default: <worm dir>/store). "
                              "With --verify: also check every content reference against it")
+    parser.add_argument("--records-socket", default=os.getenv("FGAT_RECORDS_SOCKET", None),
+                        help="UNIX seqpacket socket for acknowledged records (default: records.sock next to --socket)")
     parser.add_argument("--blob-socket", default=os.getenv("FGAT_BLOB_SOCKET", None),
                         help="UNIX stream socket for content (default: blobs.sock next to --socket)")
     parser.add_argument("--max-record-bytes", type=int, default=16384,
@@ -496,6 +597,7 @@ def main():
             rejects_path=args.rejects,
             store_dir=args.store,
             blob_socket_path=args.blob_socket,
+            records_socket_path=args.records_socket,
             max_record_bytes=args.max_record_bytes,
         )
         collector.start()

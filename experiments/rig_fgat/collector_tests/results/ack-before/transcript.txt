@@ -1,0 +1,40 @@
+# Ack test before — 2026-10-22T13:02:53Z
+collector: d4abdf8260861036d7e9fb8ab833ab26b2dc75c8a74ab50971bdf6752aceebbd  client: c6dfe985e263510d3e4128602139795d7b6505a1451edf87c2aa1db5f98089ba  client waits for reply: False
+
+## A1 accepted record
+[A1 accepted] returned 190 (0.00s)
+
+## A2 record over the size limit
+[A2 oversize] returned 40181 (0.00s)
+
+## A3 record citing content never stored
+[A3 unknown ref] returned 273 (0.00s)
+
+## A4 malformed payload on the client's own connection
+[A4 malformed] sent; this client has no way to receive a reply
+
+## A5 collector stopped while a record is sent
+[A5 collector stopped] returned 190 (0.00s)
+
+## A8 legacy datagram sender
+[A8 legacy] sendto returned 189; no reply path
+
+## A10 collector not running
+[A10 no collector] RecorderError: record send to /tmp/bbx-ack-00dpc6ib/events.sock failed: [Errno 2] No such file or directory (0.00s)
+
+journal: 3 records; seqs (first 10): [1, 5, 8]; rejected: 3
+  rejected: record of 40181 bytes exceeds 16384 (put content in the store and send its hash)
+  rejected: references content not in the store: ['b68565cf5699273f6a21847b3fe44726374cbd6c3bfdc829527f1db2a0504
+  rejected: malformed record: Expecting value: line 1 column 1 (char 0)
+A5 record chained after the collector resumed: True
+A8 legacy sender's record chained: True
+
+collector output (tail):
+[*] Evidentiary WORM target:       /tmp/bbx-ack-00dpc6ib/worm/audit_journal.jsonl
+[*] Initial block hash:            0000000000000000...
+[*] Accepted sender UIDs:          [1000]
+[*] Content store:                 /tmp/bbx-ack-00dpc6ib/worm/store (blob socket /tmp/bbx-ack-00dpc6ib/blobs.sock)
+[*] Max record bytes:              16384
+
+[*] Stopping forensic collector daemon...
+[*] Collector daemon shutdown complete.
