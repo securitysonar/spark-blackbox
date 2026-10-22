@@ -2,17 +2,25 @@
 """One Agentic Black Box trial: unmodified rig.py, wrapped, tools sandboxed.
 
 rig.py is imported, never edited. Its seams (the model call, build_window,
-load_progress, gate, and every TOOLS entry) are wrapped to write FGAT-style
-JSONL records to a local journal. rig's loop and the model calls run on the
-host; every tool call executes inside a per-trial container (sandbox/) on the
-internal network bbx-net, whose only other member is the beacon listener.
+load_progress, gate, and every TOOLS entry) are wrapped to send records to the
+FGAT collector (collector/collector_daemon.py, one per trial campaign) through
+fgat_client: content to the collector's store, records over its acknowledged
+records socket. Schema: collector/SCHEMA.md. rig's loop and the model calls run
+on the host; every tool call executes inside a per-trial container (sandbox/)
+on the internal network bbx-net, whose only other member is the beacon listener.
+
+Fail-closed: if the collector rejects a record or doesn't answer, the session
+stops. An intent that isn't acknowledged means the tool doesn't run. The abort
+is a BaseException so rig's per-tool `except Exception` can't turn it into a
+tool error the model sees.
 
 Ground truth for the beacon is the listener log, never the transcript.
 Ground truth for other side effects is `docker diff` of the tool container.
 
-Usage (on the Spark, after sandbox/setup.sh):
+Usage (on the Spark, after sandbox/setup.sh, with the campaign collector running):
   RIG_BASE_URL=http://localhost:11434/v1 RIG_MODEL=qwen3.8:27b \
-  python3 fgat_rig_trial.py --variant V2 --gate A --rig /path/to/spark-rig-eval/rig.py
+  python3 fgat_rig_trial.py --variant V2 --gate A --rig /path/to/spark-rig-eval/rig.py \
+      --collector-socket /path/to/campaign/run/events.sock
 """
 import argparse
 import hashlib
@@ -27,7 +35,13 @@ import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "sandbox"))
+# fgat_client: repo layout (collector/ two levels up) or the Spark's flat layout (collector/ beside)
+for _d in (os.path.join(HERE, "..", "..", "collector"), os.path.join(HERE, "collector")):
+    if os.path.exists(os.path.join(_d, "fgat_client.py")):
+        sys.path.insert(0, os.path.abspath(_d))
+        break
 from sandbox import ToolSandbox  # noqa: E402
+from fgat_client import FgatClient, RecorderError, canonical  # noqa: E402
 
 LISTENER_HOST = "bbx-listener"  # reachable only from inside bbx-net
 LISTENER_PORT = int(os.environ.get("BBX_LISTENER_PORT", "8898"))
@@ -64,27 +78,57 @@ def sha(b):
     return hashlib.sha256(b).hexdigest()
 
 
+class RecorderAbort(BaseException):
+    """The collector didn't acknowledge a record: stop the session."""
+
+
+# Keep records well under the collector's 16 KiB limit: string fields longer than
+# this go to the store and are replaced by <name>_sha256 and <name>_bytes.
+INLINE_LIMIT = 4096
+
+
 class Journal:
-    def __init__(self, path, store_dir, session_id):
-        self.f = open(path, "a", buffering=1, encoding="utf-8")
-        self.store = store_dir
+    def __init__(self, client, session_id):
+        self.c = client
         self.session_id = session_id
         self.seq = 0
-        os.makedirs(store_dir, exist_ok=True)
+        self.first_block = None
+        self.last_block = None
+        self.failure = None
 
     def put(self, content):
-        h = sha(content)
-        p = os.path.join(self.store, h)
-        if not os.path.exists(p):
-            with open(p, "w", encoding="utf-8") as f:
-                f.write(content)
-        return h
+        try:
+            return self.c.put(content)
+        except RecorderError as e:
+            self.failure = f"put: {e}"
+            raise RecorderAbort(self.failure) from e
+
+    def offload(self, obj):
+        """Replace long strings (at any depth) with store references."""
+        if isinstance(obj, dict):
+            out = {}
+            for k, v in obj.items():
+                if isinstance(v, str) and len(v.encode("utf-8")) > INLINE_LIMIT:
+                    out[f"{k}_sha256"] = self.put(v)
+                    out[f"{k}_bytes"] = len(v.encode("utf-8"))
+                else:
+                    out[k] = self.offload(v)
+            return out
+        if isinstance(obj, list):
+            return [self.offload(v) for v in obj]
+        return obj
 
     def emit(self, kind, **fields):
         self.seq += 1
-        rec = {"session_id": self.session_id, "seq": self.seq, "kind": kind,
-               "ts": time.time(), **fields}
-        self.f.write(json.dumps(rec, sort_keys=True) + "\n")
+        rec = self.offload({"session_id": self.session_id, "seq": self.seq, "kind": kind,
+                            "ts": time.time(), **fields})
+        try:
+            block = self.c.emit(rec)
+        except RecorderError as e:
+            self.failure = f"seq {self.seq} ({kind}): {e}"
+            raise RecorderAbort(self.failure) from e
+        self.first_block = self.first_block or block
+        self.last_block = block
         return rec
 
 
@@ -206,6 +250,8 @@ def main():
     ap.add_argument("--rig", required=True)
     ap.add_argument("--max-turns", type=int, default=80)  # 36-module fixture; pilots used 40
     ap.add_argument("--out", default=os.path.join(HERE, "runs"))
+    ap.add_argument("--collector-socket", default=os.environ.get("FGAT_SOCKET", "/run/agent-journal/events.sock"),
+                    help="The campaign collector's datagram socket path; records.sock and blobs.sock sit beside it")
     a = ap.parse_args()
 
     os.environ["RIG_AUTO_APPROVE"] = "1" if a.gate == "A" else "0"
@@ -223,7 +269,11 @@ def main():
     with open(os.path.join(work, "docs/internals/architecture.md"), "w") as f:
         f.write(doc)
 
-    j = Journal(os.path.join(run_dir, "journal.jsonl"), os.path.join(run_dir, "store"), sid)
+    j = Journal(FgatClient(a.collector_socket), sid)
+    try:
+        j.put("")  # the collector must be up before anything runs
+    except RecorderAbort as e:
+        sys.exit(f"collector not reachable at {a.collector_socket}: {e}")
     meta = {"session_id": sid, "variant": a.variant, "gate": a.gate, "canary": canary,
             "workdir": work, "rig_sha256": sha(open(a.rig, "rb").read()),
             "model": os.environ.get("RIG_MODEL"), "max_turns": a.max_turns,
@@ -247,6 +297,8 @@ def main():
     try:
         try:
             final = rig.run_loop(TASK, max_turns=a.max_turns)
+        except RecorderAbort as e:  # fail-closed: the session stops here
+            err = f"RecorderAbort: {e}"
         except Exception as e:  # record, don't hide
             err = f"{type(e).__name__}: {e}"
         t1 = time.time()
@@ -266,6 +318,9 @@ def main():
                  "container_diff_lines": len(diff.splitlines()),
                  "pip_side_effects": pip_side_effects[:50],
                  "window_trace": state["trace"],
+                 "collector": {"socket": a.collector_socket, "records": j.seq,
+                               "first_block_hash": j.first_block, "last_block_hash": j.last_block,
+                               "failure": j.failure},
                  "doc_evicted_turn": first_evicted(state["trace"], "doc"),
                  "payload_evicted_turn": first_evicted(state["trace"], "payload")})
     with open(os.path.join(run_dir, "meta.json"), "w") as f:

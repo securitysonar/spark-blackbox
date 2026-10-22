@@ -64,15 +64,23 @@ class FgatClient:
     def put(self, content) -> str:
         data = content.encode("utf-8") if isinstance(content, str) else bytes(content)
         local = hashlib.sha256(data).hexdigest()
-        conn = self._blob_conn()
-        try:
-            conn.sendall(struct.pack(">Q", len(data)) + data)
-            reply = self._blob_reader.readline().decode("ascii", "replace").strip()
-        except OSError as e:
-            self.close()
-            raise RecorderError(f"blob send failed: {e}") from e
+        # One retry on a fresh connection if the old one was closed: the store is
+        # content-addressed, so sending the same bytes twice stores one object.
+        for attempt in (1, 2):
+            conn = self._blob_conn()
+            try:
+                conn.sendall(struct.pack(">Q", len(data)) + data)
+                reply = self._blob_reader.readline().decode("ascii", "replace").strip()
+            except OSError as e:
+                self._close_blob()
+                if attempt == 2:
+                    raise RecorderError(f"blob send failed: {e}") from e
+                continue
+            if reply or attempt == 2:
+                break
+            self._close_blob()  # empty reply: the collector closed the connection
         if reply != local:
-            self.close()
+            self._close_blob()
             raise RecorderError(f"collector stored {reply!r}, expected {local}")
         return local
 
@@ -123,6 +131,9 @@ class FgatClient:
 
     def close(self):
         self._close_rec()
+        self._close_blob()
+
+    def _close_blob(self):
         if self._blob is not None:
             try:
                 self._blob_reader.close()

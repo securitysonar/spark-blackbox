@@ -368,18 +368,27 @@ class ForensicCollector:
             if uid not in self.allow_uids:
                 self._reject(ts, cred, "sender uid not allowed", b"", channel="blob-connect")
                 return
-            conn.settimeout(30)
             while True:
+                # A client may sit idle between blobs for as long as a model call
+                # takes, so waiting for the next header has no timeout. Once a blob
+                # starts, the rest of it must arrive within 30 s.
+                conn.settimeout(None)
                 header = _recv_exact(conn, 8)
                 if header is None:
                     return
+                conn.settimeout(30)
                 n = struct.unpack(">Q", header)[0]
                 if n > self.max_blob_bytes:
                     self._reject(datetime.now(timezone.utc).isoformat(), cred,
                                  f"blob of {n} bytes exceeds {self.max_blob_bytes}", b"", channel="blob")
                     conn.sendall(b"ERR too large\n")
                     return
-                body = _recv_exact(conn, n)
+                try:
+                    body = _recv_exact(conn, n)
+                except socket.timeout:
+                    self._reject(datetime.now(timezone.utc).isoformat(), cred,
+                                 f"blob of {n} bytes not received within 30 s", b"", channel="blob")
+                    return
                 if body is None:
                     return
                 digest = hashlib.sha256(body).hexdigest()

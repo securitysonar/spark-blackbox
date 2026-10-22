@@ -19,6 +19,16 @@ docker network inspect bbx-net >/dev/null 2>&1 || docker network create --intern
 BR="br-$(docker network inspect bbx-net -f '{{.Id}}' | cut -c1-12)"
 sudo iptables -C INPUT -i "$BR" -j DROP 2>/dev/null || sudo iptables -I INPUT -i "$BR" -j DROP
 
+# PID link (step-0 decision b): audit every execve by the tool-container UID, so tool
+# calls can be matched to host processes by time (pid_link.py). Needs auditd installed.
+# Not persistent, like the firewall rule: re-applied on every setup.
+if command -v auditctl >/dev/null; then
+  sudo auditctl -l | grep -q "key=bbx-tools" || \
+    sudo auditctl -a always,exit -F arch=b64 -S execve,execveat -F uid=2000 -k bbx-tools
+else
+  echo "WARNING: auditd not installed; no PID link for tool calls" >&2
+fi
+
 mkdir -p "$ROOT/listener"
 docker rm -f bbx-listener >/dev/null 2>&1 || true
 docker run -d --name bbx-listener --network bbx-net \
