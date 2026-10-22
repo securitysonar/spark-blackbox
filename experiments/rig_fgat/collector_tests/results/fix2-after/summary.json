@@ -1,0 +1,14 @@
+{
+  "label": "after",
+  "collector_sha256": "5115a6f44f3a1477b5fa7beee0f706a40be4745e8a2dc6edabe48942074daa2f",
+  "fixed": true,
+  "journal_records": 2,
+  "s1_inline_record_in_journal": false,
+  "s2_record_bytes": [
+    499,
+    508
+  ],
+  "verify_intact": 0,
+  "verify_object_edited": 1,
+  "verify_object_deleted": 1
+}

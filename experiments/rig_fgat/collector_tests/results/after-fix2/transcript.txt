@@ -1,0 +1,53 @@
+# H6/H7 after-fix2 — 2026-10-22T11:50:03Z
+collector: 5115a6f44f3a1477b5fa7beee0f706a40be4745e8a2dc6edabe48942074daa2f  collector/collector_daemon.py
+image: bbx-tools:2 sha256:a97a8ccef6a5cb2f20685de395d13e38679663e8db773f0499026e4b5831582d
+host uid: 1000  tool container user: 2000:2000
+socket mode: 0o660
+
+## H6 forgery
+socket mode: 0o660
+container command: docker run --rm --network none --user 2000:2000 --cap-drop ALL --security-opt no-new-privileges -v /tmp/bbx-h6h7-2vg1urgk/agent-journal:/run/agent-journal bbx-tools:2 python3 -c import json,socket,sys,os; r=json.loads(sys.argv[1]); s=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM); n=s.sendto(json.dumps(r).encode(),'/run/agent-journal/events.sock'); print('container uid',os.getuid(),'sent',n,'bytes') '<forged record JSON>'
+container exit: 1
+container stdout: 
+container stderr: PermissionError: [Errno 13] Permission denied
+
+## H6b forgery with the socket mode relaxed to 0666 (tests the collector's UID check alone)
+socket mode: 0o666
+container command: docker run --rm --network none --user 2000:2000 --cap-drop ALL --security-opt no-new-privileges -v /tmp/bbx-h6h7-2vg1urgk/agent-journal:/run/agent-journal bbx-tools:2 python3 -c import json,socket,sys,os; r=json.loads(sys.argv[1]); s=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM); n=s.sendto(json.dumps(r).encode(),'/run/agent-journal/events.sock'); print('container uid',os.getuid(),'sent',n,'bytes') '<forged record JSON>'
+container exit: 0
+container stdout: container uid 2000 sent 320 bytes
+collector output:
+[-] Rejected record from {'pid': 1005782, 'uid': 2000, 'gid': 2000}: sender uid not allowed
+[*] Forensic Collector listening on: /tmp/bbx-h6h7-2vg1urgk/agent-journal/events.sock
+[*] Operational stream target:     /tmp/bbx-h6h7-2vg1urgk/operational/events.jsonl
+[*] Evidentiary WORM target:       /tmp/bbx-h6h7-2vg1urgk/worm/audit_journal.jsonl
+[*] Initial block hash:            0000000000000000...
+[*] Accepted sender UIDs:          [1000]
+[*] Content store:                 /tmp/bbx-h6h7-2vg1urgk/worm/store (blob socket /tmp/bbx-h6h7-2vg1urgk/agent-journal/blobs.sock)
+[*] Max record bytes:              16384
+
+[*] Stopping forensic collector daemon...
+[*] Collector daemon shutdown complete.
+rejected datagrams logged: 1
+{"channel":"record","host_ingest_utc":"2026-10-22T11:50:05.846758+00:00","payload_bytes":320,"payload_sha256":"0cc5e3bdfcebe408cd2b611dfaf374b752016633f4e8b0af60f72ba058e6e1cc","reason":"sender uid not allowed","sender":{"gid":2000,"pid":1005782,"uid":2000}}
+journal records: 3 (3 sent from the host harness position)
+verify (unedited journal) exit: 0
+[+] Recomputed and verified 3 blocks in /tmp/bbx-h6h7-2vg1urgk/worm/audit_journal.jsonl. Head: 0330a54ad95ea29cbef488fc5d75668dc1d48990495ce01b407c8a0f139994da
+H6 RESULT: forged record accepted=False chained=False verifier_exit_on_journal_with_forgery=0
+
+## H7 byte edit
+edited line 2: "pytest -q" -> "pytesT -q" (one byte, payload field; _chain untouched)
+cmp -l (byte offset, octal old, octal new): 998 164 124
+verify (edited journal) exit: 1
+[-] Line 2: Hash mismatch! Stored block_hash 0819727ec1c24f6dd697c780258c3773a60049017e3099a421d644910c8d5ebe, recomputed 758faf38dbef0b5a11653670b6341f2e3470c4091a44cd219c13b383288c9d39. The record was altered after it was chained.
+H7 RESULT: verifier passed the edited journal=False
+
+## H7b byte edit with the whole chain recomputed
+verify (rewritten journal, no anchor) exit: 0
+[+] Recomputed and verified 3 blocks in /home/pete/code/blackbox-eval/collector_tests/results/after-fix2/journal_rewritten.jsonl. Head: 11725b844f92806c2fa65f22955c33f953dc1166ada8a280a68854e998ee958c
+verify (rewritten journal, with anchor) exit: 1
+[+] Recomputed and verified 3 blocks in /home/pete/code/blackbox-eval/collector_tests/results/after-fix2/journal_rewritten.jsonl. Head: 11725b844f92806c2fa65f22955c33f953dc1166ada8a280a68854e998ee958c
+[-] Anchor mismatch at block 2: journal has 3 blocks, anchor /home/pete/code/blackbox-eval/collector_tests/results/after-fix2/operational.jsonl has 3; sequences differ.
+H7b RESULT: {'passed_without_anchor': True, 'passed_with_anchor': False}
+
+summary: {"label": "after-fix2", "collector_sha256": "5115a6f44f3a1477b5fa7beee0f706a40be4745e8a2dc6edabe48942074daa2f", "image": "sha256:a97a8ccef6a5cb2f20685de395d13e38679663e8db773f0499026e4b5831582d", "host_uid": 1000, "h6": {"accepted": false, "chained": false, "verify_exit_with_forgery": 0}, "h7": {"verifier_passed_edit": false}, "h7b": {"passed_without_anchor": true, "passed_with_anchor": false}, "tool_user": "2000:2000", "collector_fixed": true}

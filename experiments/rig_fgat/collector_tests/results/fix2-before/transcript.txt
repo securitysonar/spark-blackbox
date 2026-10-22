@@ -1,0 +1,19 @@
+# Fix 2 before — 2026-10-22T11:49:26Z
+collector: 28059cdf8f21feb0e50a6c9a55bd6e567cd352cc641976037d55225e9c107ef9  collector_before/collector_daemon.py  fixed: False
+
+## S1 record with ~100 KB of tool output inline
+sendto accepted 101376 of 101376 bytes
+
+collector output:
+[-] Malformed payload discarded: Unterminated string starting at: line 1 column 124 (char 123)
+[*] Forensic Collector listening on: /tmp/bbx-fix2-vgktyqg2/agent-journal/events.sock
+[*] Operational stream target:     /tmp/bbx-fix2-vgktyqg2/operational/events.jsonl
+[*] Evidentiary WORM target:       /tmp/bbx-fix2-vgktyqg2/worm/audit_journal.jsonl
+[*] Initial block hash:            0000000000000000...
+
+[*] Stopping forensic collector daemon...
+[*] Collector daemon shutdown complete.
+
+journal records: 0
+
+summary: {"journal_records": 0, "s1_inline_record_in_journal": false}

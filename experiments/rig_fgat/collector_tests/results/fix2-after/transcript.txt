@@ -1,0 +1,58 @@
+# Fix 2 after — 2026-10-22T11:49:53Z
+collector: 5115a6f44f3a1477b5fa7beee0f706a40be4745e8a2dc6edabe48942074daa2f  collector/collector_daemon.py  fixed: True
+
+## S1 record with ~100 KB of tool output inline
+sendto accepted 101376 of 101376 bytes
+
+## S2 same output via the store; record carries the hash
+put returned 1878372e465144639831e6516f99c6f9e1ed44528fc3010c1ff8f2781d73409f local sha256 1878372e465144639831e6516f99c6f9e1ed44528fc3010c1ff8f2781d73409f
+put 1000000 bytes returned 899075ea74a9a060933812381461b08c5f5dfc29a2b93fbc3258996272089041
+record bytes sent: 207 and 216
+
+## S3 record referencing content the collector never stored
+record bytes sent: 198 (reference b68565cf5699273f6a21847b3fe44726374cbd6c3bfdc829527f1db2a0504341)
+client refused oversize record locally: record is 101304 bytes (limit 16384); put large fields in the store and send their hash
+
+## S4 tool container connects to the blob socket
+blob socket mode: 0o660
+container exit: 1 stdout: 
+container stderr: PermissionError: [Errno 13] Permission denied
+blob socket mode: 0o666
+container exit: 0 stdout: container uid 2000 reply b"ConnectionResetError(104, 'Connection reset by peer')"
+
+collector output:
+[-] Rejected record from {'pid': 1005291, 'uid': 1000, 'gid': 1000}: record of 101376 bytes exceeds 16384 (put content in the store and send its hash)
+[-] Rejected record from {'pid': 1005291, 'uid': 1000, 'gid': 1000}: references content not in the store: ['b68565cf5699273f6a21847b3fe44726374cbd6c3bfdc829527f1db2a0504341']
+[-] Rejected blob-connect from {'pid': 1005424, 'uid': 2000, 'gid': 2000}: sender uid not allowed
+[*] Forensic Collector listening on: /tmp/bbx-fix2-29a2y5ca/agent-journal/events.sock
+[*] Operational stream target:     /tmp/bbx-fix2-29a2y5ca/operational/events.jsonl
+[*] Evidentiary WORM target:       /tmp/bbx-fix2-29a2y5ca/worm/audit_journal.jsonl
+[*] Initial block hash:            0000000000000000...
+[*] Accepted sender UIDs:          [1000]
+[*] Content store:                 /tmp/bbx-fix2-29a2y5ca/worm/store (blob socket /tmp/bbx-fix2-29a2y5ca/agent-journal/blobs.sock)
+[*] Max record bytes:              16384
+
+[*] Stopping forensic collector daemon...
+[*] Collector daemon shutdown complete.
+
+journal records: 2
+  line 1: turn 2, 499 bytes, inline result: False, result_sha256: 1878372e465144639831e6516f99c6f9e1ed44528fc3010c1ff8f2781d73409f
+  line 2: turn 3, 508 bytes, inline result: False, result_sha256: 899075ea74a9a060933812381461b08c5f5dfc29a2b93fbc3258996272089041
+rejected: 3
+  {"channel":"record","host_ingest_utc":"2026-10-22T11:49:54.281838+00:00","payload_bytes":101376,"payload_sha256":"ab771a1c2dacd00ea045e46972110ea2a10dd921a072a8eef908c975b47c54ee","reason":"record of 101376 bytes exceeds 16384 (put content in the store and send its hash)","sender":{"gid":1000,"pid":1005291,"uid":1000}}
+  {"channel":"record","host_ingest_utc":"2026-10-22T11:49:55.311256+00:00","payload_bytes":198,"payload_sha256":"5812387a1aafa17feb578fa194b52c34810b06cfad39cb81e08ec47b2f2b4bcf","reason":"references content not in the store: ['b68565cf5699273f6a21847b3fe44726374cbd6c3bfdc829527f1db2a0504341']","sender":{"gid":1000,"pid":1005291,"uid":1000}}
+  {"channel":"blob-connect","host_ingest_utc":"2026-10-22T11:49:56.698111+00:00","payload_bytes":0,"payload_sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","reason":"sender uid not allowed","sender":{"gid":2000,"pid":1005424,"uid":2000}}
+store objects: 2
+  1878372e465144639831e6516f99c6f9e1ed44528fc3010c1ff8f2781d73409f  100000 bytes  mode 0o440
+  899075ea74a9a060933812381461b08c5f5dfc29a2b93fbc3258996272089041  1000000 bytes  mode 0o440
+
+## S5 verify --store
+verify (intact) exit: 0
+[+] Recomputed and verified 2 blocks in /tmp/bbx-fix2-29a2y5ca/worm/audit_journal.jsonl. Head: ee2e68310cc11b6e460b28ec8789fca9b485a2efed78035fc16e3feb8557c397
+[+] Every content reference resolves to an unaltered object in /tmp/bbx-fix2-29a2y5ca/worm/store.
+verify (one byte of a stored object changed) exit: 1
+[-] Line 1: store object 1878372e465144639831e6516f99c6f9e1ed44528fc3010c1ff8f2781d73409f (result_sha256) now hashes to f4bad8249b8bd755a3f2e45d75385b0331052ae08ad99f8ec1e4dc0a49ac8342. The stored content was altered.
+verify (stored object deleted) exit: 1
+[-] Line 1: result_sha256 1878372e465144639831e6516f99c6f9e1ed44528fc3010c1ff8f2781d73409f is missing from the store.
+
+summary: {"journal_records": 2, "s1_inline_record_in_journal": false, "s2_record_bytes": [499, 508], "verify_intact": 0, "verify_object_edited": 1, "verify_object_deleted": 1}

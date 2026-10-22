@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import signal
 import socket
 import struct
@@ -40,6 +41,10 @@ class ForensicCollector:
         pcap_path: Optional[str] = None,
         allow_uids: Optional[set] = None,
         rejects_path: Optional[str] = None,
+        store_dir: Optional[str] = None,
+        blob_socket_path: Optional[str] = None,
+        max_record_bytes: int = 16384,
+        max_blob_bytes: int = 64 * 1024 * 1024,
     ):
         self.socket_path = socket_path
         self.operational_path = operational_path
@@ -51,6 +56,17 @@ class ForensicCollector:
         # harness UID belongs here; tool sandboxes must run under a different UID.
         self.allow_uids = set(allow_uids) if allow_uids else {os.getuid()}
         self.rejects_path = rejects_path or os.path.join(os.path.dirname(worm_path), "rejected.jsonl")
+        # Content-addressed store owned by the collector. Records carry only SHA-256
+        # references (keys ending in _sha256); the content itself arrives on the blob
+        # socket, is hashed here, and is stored under that hash. A record may only
+        # reference content this collector stored, and it must stay small.
+        self.store_dir = store_dir or os.path.join(os.path.dirname(worm_path), "store")
+        self.blob_socket_path = blob_socket_path or os.path.join(os.path.dirname(socket_path), "blobs.sock")
+        self.max_record_bytes = max_record_bytes
+        self.max_blob_bytes = max_blob_bytes
+        self.blob_sock = None
+        self._rej_lock = threading.Lock()
+        self.rej_f = None
         self.last_block_hash = "0" * 64  # Genesis block initialization
         self.running = False
         self.sock = None
@@ -76,6 +92,7 @@ class ForensicCollector:
         Path(self.worm_path).parent.mkdir(parents=True, exist_ok=True)
         Path(self.socket_path).parent.mkdir(parents=True, exist_ok=True)
         Path(self.rejects_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(self.store_dir).mkdir(parents=True, exist_ok=True)
 
         # Resume last block hash if journal already exists
         if os.path.exists(self.worm_path) and os.path.getsize(self.worm_path) > 0:
@@ -106,6 +123,14 @@ class ForensicCollector:
         except OSError:
             pass
 
+        if os.path.exists(self.blob_socket_path):
+            os.remove(self.blob_socket_path)
+        self.blob_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.blob_sock.bind(self.blob_socket_path)
+        os.chmod(self.blob_socket_path, 0o660)
+        self.blob_sock.listen(8)
+        self.blob_sock.settimeout(1.0)
+
         self.running = True
 
         def _sig_handler(sig, frame):
@@ -124,15 +149,23 @@ class ForensicCollector:
         print(f"[*] Evidentiary WORM target:       {self.worm_path}")
         print(f"[*] Initial block hash:            {self.last_block_hash[:16]}...")
         print(f"[*] Accepted sender UIDs:          {sorted(self.allow_uids)}")
+        print(f"[*] Content store:                 {self.store_dir} (blob socket {self.blob_socket_path})")
+        print(f"[*] Max record bytes:              {self.max_record_bytes}")
+
+        self.rej_f = open(self.rejects_path, "a", buffering=1, encoding="utf-8")
+        blob_thread = threading.Thread(target=self._serve_blobs, daemon=True)
+        blob_thread.start()
 
         with open(self.worm_path, "a", buffering=1, encoding="utf-8") as worm_f, \
-             open(self.operational_path, "a", buffering=1, encoding="utf-8") as op_f, \
-             open(self.rejects_path, "a", buffering=1, encoding="utf-8") as rej_f:
+             open(self.operational_path, "a", buffering=1, encoding="utf-8") as op_f:
 
             while self.running:
                 try:
                     self.sock.settimeout(1.0)
-                    data, ancdata, _, _ = self.sock.recvmsg(65535, socket.CMSG_SPACE(UCRED.size))
+                    # Read past the record limit so oversize records are measured, not cut
+                    # off; MSG_TRUNC flags anything longer than even this buffer.
+                    data, ancdata, msg_flags, _ = self.sock.recvmsg(
+                        RECV_BUFFER, socket.CMSG_SPACE(UCRED.size))
                 except socket.timeout:
                     continue
                 except Exception as e:
@@ -147,12 +180,13 @@ class ForensicCollector:
                 cred = sender_credentials(ancdata)
                 if cred is None or cred["uid"] not in self.allow_uids:
                     # Not chained. Kept as evidence of the attempt.
-                    rej = {"host_ingest_utc": ingest_ts, "sender": cred,
-                           "reason": "no credentials" if cred is None else "sender uid not allowed",
-                           "payload_sha256": hashlib.sha256(data).hexdigest(),
-                           "payload_bytes": len(data)}
-                    rej_f.write(canonical(rej).decode("utf-8") + "\n")
-                    print(f"[-] Rejected datagram from {cred}: {rej['reason']}", file=sys.stderr)
+                    self._reject(ingest_ts, cred, "no credentials" if cred is None else "sender uid not allowed",
+                                 data, channel="record")
+                    continue
+                if msg_flags & socket.MSG_TRUNC or len(data) > self.max_record_bytes:
+                    size = f"over {RECV_BUFFER}" if msg_flags & socket.MSG_TRUNC else str(len(data))
+                    self._reject(ingest_ts, cred, f"record of {size} bytes exceeds {self.max_record_bytes} "
+                                 "(put content in the store and send its hash)", data, channel="record")
                     continue
 
                 try:
@@ -160,7 +194,13 @@ class ForensicCollector:
                     if not isinstance(record, dict):
                         raise ValueError("record is not a JSON object")
                 except Exception as e:
-                    print(f"[-] Malformed payload discarded: {e}", file=sys.stderr)
+                    self._reject(ingest_ts, cred, f"malformed record: {e}", data, channel="record")
+                    continue
+
+                missing = [h for _, h in content_refs(record) if not self._stored(h)]
+                if missing:
+                    self._reject(ingest_ts, cred, f"references content not in the store: {missing}",
+                                 data, channel="record")
                     continue
 
                 # The collector, not the sender, sets these fields.
@@ -220,15 +260,78 @@ class ForensicCollector:
         if self.pcap_writer:
             self.pcap_writer.close()
 
-        if os.path.exists(self.socket_path):
-            try:
-                os.remove(self.socket_path)
-            except OSError:
-                pass
+        blob_thread.join(timeout=5)
+        self.rej_f.close()
+        for path in (self.socket_path, self.blob_socket_path):
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
         print("[*] Collector daemon shutdown complete.")
 
+    def _reject(self, ingest_ts, cred, reason, data, channel):
+        rej = {"host_ingest_utc": ingest_ts, "channel": channel, "sender": cred, "reason": reason,
+               "payload_sha256": hashlib.sha256(data).hexdigest(), "payload_bytes": len(data)}
+        with self._rej_lock:
+            self.rej_f.write(canonical(rej).decode("utf-8") + "\n")
+        print(f"[-] Rejected {channel} from {cred}: {reason}", file=sys.stderr)
 
-def verify_journal(worm_path: str, anchor_path: Optional[str] = None) -> bool:
+    def _stored(self, digest: str) -> bool:
+        return os.path.exists(os.path.join(self.store_dir, digest))
+
+    def _serve_blobs(self):
+        """Blob protocol, per connection: repeat [8-byte big-endian length][bytes];
+        the reply to each blob is its 64-hex SHA-256 and a newline, or a line
+        starting with ERR. The collector computes the hash; the client checks it."""
+        while self.running:
+            try:
+                conn, _ = self.blob_sock.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            threading.Thread(target=self._handle_blob_conn, args=(conn,), daemon=True).start()
+        self.blob_sock.close()
+
+    def _handle_blob_conn(self, conn):
+        with conn:
+            raw = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, UCRED.size)
+            pid, uid, gid = UCRED.unpack(raw)
+            cred = {"pid": pid, "uid": uid, "gid": gid}
+            ts = datetime.now(timezone.utc).isoformat()
+            if uid not in self.allow_uids:
+                self._reject(ts, cred, "sender uid not allowed", b"", channel="blob-connect")
+                return
+            conn.settimeout(30)
+            while True:
+                header = _recv_exact(conn, 8)
+                if header is None:
+                    return
+                n = struct.unpack(">Q", header)[0]
+                if n > self.max_blob_bytes:
+                    self._reject(datetime.now(timezone.utc).isoformat(), cred,
+                                 f"blob of {n} bytes exceeds {self.max_blob_bytes}", b"", channel="blob")
+                    conn.sendall(b"ERR too large\n")
+                    return
+                body = _recv_exact(conn, n)
+                if body is None:
+                    return
+                digest = hashlib.sha256(body).hexdigest()
+                path = os.path.join(self.store_dir, digest)
+                if not os.path.exists(path):
+                    tmp = f"{path}.tmp-{threading.get_ident()}"
+                    with open(tmp, "wb") as f:
+                        f.write(body)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.chmod(tmp, 0o440)
+                    os.replace(tmp, path)
+                conn.sendall(digest.encode("ascii") + b"\n")
+
+
+def verify_journal(worm_path: str, anchor_path: Optional[str] = None,
+                   store_dir: Optional[str] = None) -> bool:
     """Recompute every block hash and check the linkage; optionally check the chain
     against the operational plane's block_hash sequence (the external anchor).
 
@@ -266,8 +369,22 @@ def verify_journal(worm_path: str, anchor_path: Optional[str] = None) -> bool:
                 return False
             last_hash = computed
             hashes.append(computed)
+            if store_dir:
+                for key, ref in content_refs(record):
+                    p = os.path.join(store_dir, ref)
+                    if not os.path.exists(p):
+                        print(f"[-] Line {idx + 1}: {key} {ref} is missing from the store.")
+                        return False
+                    with open(p, "rb") as bf:
+                        actual = hashlib.sha256(bf.read()).hexdigest()
+                    if actual != ref:
+                        print(f"[-] Line {idx + 1}: store object {ref} ({key}) now hashes to {actual}. "
+                              "The stored content was altered.")
+                        return False
 
     print(f"[+] Recomputed and verified {len(hashes)} blocks in {worm_path}. Head: {last_hash}")
+    if store_dir:
+        print(f"[+] Every content reference resolves to an unaltered object in {store_dir}.")
 
     if anchor_path:
         anchored = []
@@ -286,6 +403,36 @@ def verify_journal(worm_path: str, anchor_path: Optional[str] = None) -> bool:
 
 
 UCRED = struct.Struct("3i")  # struct ucred: pid_t pid, uid_t uid, gid_t gid
+RECV_BUFFER = 262144
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def content_refs(obj, prefix=""):
+    """(key, sha256) for every store reference in a record: keys ending in _sha256,
+    at any depth, whose value is a 64-hex digest. _chain and _ingest are skipped."""
+    out = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k in ("_chain", "_ingest"):
+                continue
+            if k.endswith("_sha256") and isinstance(v, str) and _HEX64.match(v):
+                out.append((prefix + k, v))
+            else:
+                out.extend(content_refs(v, prefix + k + "."))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            out.extend(content_refs(v, f"{prefix}{i}."))
+    return out
+
+
+def _recv_exact(conn, n):
+    buf = bytearray()
+    while len(buf) < n:
+        chunk = conn.recv(min(n - len(buf), 1 << 20))
+        if not chunk:
+            return None
+        buf.extend(chunk)
+    return bytes(buf)
 
 
 def sender_credentials(ancdata) -> Optional[dict]:
@@ -327,11 +474,18 @@ def main():
     parser.add_argument("--verify", action="store_true", help="Verify cryptographic chain integrity of target WORM file")
     parser.add_argument("--anchor", default=None,
                         help="With --verify: operational-plane file whose block_hash sequence must match the journal")
+    parser.add_argument("--store", default=os.getenv("FGAT_STORE", None),
+                        help="Content-addressed store directory (default: <worm dir>/store). "
+                             "With --verify: also check every content reference against it")
+    parser.add_argument("--blob-socket", default=os.getenv("FGAT_BLOB_SOCKET", None),
+                        help="UNIX stream socket for content (default: blobs.sock next to --socket)")
+    parser.add_argument("--max-record-bytes", type=int, default=16384,
+                        help="Reject records larger than this; content belongs in the store")
 
     args = parser.parse_args()
 
     if args.verify:
-        sys.exit(0 if verify_journal(args.worm, args.anchor) else 1)
+        sys.exit(0 if verify_journal(args.worm, args.anchor, args.store) else 1)
     else:
         collector = ForensicCollector(
             socket_path=args.socket,
@@ -341,6 +495,9 @@ def main():
             pcap_path=args.pcap,
             allow_uids=set(args.allow_uid) or None,
             rejects_path=args.rejects,
+            store_dir=args.store,
+            blob_socket_path=args.blob_socket,
+            max_record_bytes=args.max_record_bytes,
         )
         collector.start()
 
