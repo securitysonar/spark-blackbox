@@ -1,0 +1,7 @@
+# Pilot mirror capture — 2026-10-22T12:48:22Z
+collector: d4abdf8260861036d7e9fb8ab833ab26b2dc75c8a74ab50971bdf6752aceebbd  collector/collector_daemon.py
+bbx-smoke-V2A-781a4c: 110 records replayed
+bbx-V2A-af0fa0: 52 records replayed
+tcpdump: tcpdump: listening on lo, link-type EN10MB (Ethernet), snapshot length 262144 bytes | 162 packets captured | 324 packets received by filter | 0 packets dropped by kernel
+operational events: 162
+pcap: /home/pete/code/blackbox-eval/collector_tests/results/pilot-mirror/fgat_pilot_operational.pcap 64919 bytes

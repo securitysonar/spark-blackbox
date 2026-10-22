@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """
 Live FGAT Wireshark Telemetry Monitor
-Captures mirrored UDP telemetry datagrams (e.g. from collector_daemon.py)
-and streams them directly into tshark in real time without requiring
-root/sudo privileges or BPF device access (/dev/bpf*).
+Receives the collector's UDP operational mirror on a socket and streams it
+into tshark in real time, without root or BPF access.
+
+This is a viewer, not a capture: it receives payloads, so tshark sees frames
+pcap_writer.py builds around them (real source address and port, but invented
+Ethernet/IP headers and receive-time timestamps). For a capture you can keep as
+evidence, run tcpdump: tcpdump -i lo -nn -s0 -U -w FILE udp port 9999
 """
 
 import argparse
@@ -41,11 +45,6 @@ def main():
         default=None,
         help="Wireshark display filter to apply (e.g. 'fgat.turn_id == 5' or '_ws.expert.group == \"Security\"')",
     )
-    parser.add_argument(
-        "--save",
-        default=None,
-        help="Optional path to simultaneously record captured stream into a .pcap file",
-    )
 
     args = parser.parse_args()
 
@@ -69,7 +68,7 @@ def main():
         subprocess.run(["tshark", "--version"], capture_output=True, check=True)
     except Exception:
         print("[-] Error: 'tshark' is not installed or not in PATH.", file=sys.stderr)
-        print("    Install it via: brew install wireshark", file=sys.stderr)
+        print("    Install it via: apt install tshark (Linux) or brew install wireshark (macOS)", file=sys.stderr)
         sys.exit(1)
 
     # 3. Create UDP listening socket
@@ -88,16 +87,13 @@ def main():
         stderr=sys.stderr,
     )
 
-    # 5. Initialize PcapWriter for stdin stream (and optional save file)
+    # 5. Initialize PcapWriter for the stdin stream (display only; see docstring)
     stdin_writer = PcapWriter(tshark_proc.stdin)
-    file_writer = PcapWriter(args.save) if args.save else None
 
     print(f"[*] FGAT Live Monitor listening on UDP {host}:{port}")
     print(f"[*] Dissector: {DISSECTOR_LUA}")
     if args.filter:
         print(f"[*] Active Display Filter: {args.filter}")
-    if args.save:
-        print(f"[*] Saving capture to: {args.save}")
     print("[*] Waiting for agent telemetry packets (Press Ctrl+C to stop)...")
     print("-" * 75)
 
@@ -109,8 +105,6 @@ def main():
             tshark_proc.wait(timeout=2)
         except Exception:
             tshark_proc.kill()
-        if file_writer:
-            file_writer.close()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, shutdown)
@@ -132,16 +126,6 @@ def main():
                 src_port=addr[1],
                 dst_port=9999,
             )
-
-            # Mirror to pcap file if enabled
-            if file_writer:
-                file_writer.write_udp_packet(
-                    payload=data,
-                    src_ip=addr[0],
-                    dst_ip=host,
-                    src_port=addr[1],
-                    dst_port=9999,
-                )
         except (socket.error, BrokenPipeError):
             break
         except Exception as e:

