@@ -1,0 +1,13 @@
+{
+  "label": "after",
+  "append a forged record (recomputed hash)": "ALLOWED",
+  "overwrite one byte in place": "DENIED (EPERM)",
+  "replace the file via rename (sed -i style)": "DENIED (EPERM)",
+  "truncate the journal": "DENIED (EPERM)",
+  "rename the journal": "DENIED (EPERM)",
+  "delete the journal": "DENIED (EPERM)",
+  "delete a store object": "DENIED (EPERM)",
+  "edit a store object in place": "ALLOWED",
+  "verify_no_anchor": 1,
+  "verify_anchor": 1
+}

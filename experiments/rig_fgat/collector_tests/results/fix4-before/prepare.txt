@@ -1,0 +1,19 @@
+# Fix 4 before prepare — 2026-10-22T11:53:08Z
+collector: c28ff78c4e25f47cbd9fc31521b5378114b33ac5ca562b6768b5c2f142d0c3a2  collector/collector_daemon.py
+[*] Forensic Collector listening on: /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/run/events.sock
+[*] Operational stream target:     /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/evidence/operational.jsonl
+[*] Evidentiary WORM target:       /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/evidence/audit_journal.jsonl
+[*] Initial block hash:            0000000000000000...
+[*] Accepted sender UIDs:          [1000]
+[*] Content store:                 /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/evidence/store (blob socket /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/run/blobs.sock)
+[*] Max record bytes:              16384
+
+[*] Stopping forensic collector daemon...
+[*] Collector daemon shutdown complete.
+verify exit: 0
+[+] Recomputed and verified 3 blocks in /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/evidence/audit_journal.jsonl. Head: 586323133f140a8258eb78f38e85735ebd435d19f285c535c658217011b1310e
+[+] Every content reference resolves to an unaltered object in /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/evidence/store.
+[+] Chain matches the external anchor (3 block hashes in /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/evidence/operational.jsonl).
+
+To seal (after run only), as root:
+  sudo chattr +a /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/evidence/audit_journal.jsonl /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/evidence/operational.jsonl /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/evidence/rejected.jsonl /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/evidence/store

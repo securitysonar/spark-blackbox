@@ -1,0 +1,19 @@
+
+# Fix 4 before attack — 2026-10-22T11:53:10Z
+uid: 1000
+lsattr:
+--------------e------- /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/evidence/audit_journal.jsonl
+--------------e------- /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/evidence/operational.jsonl
+--------------e------- /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/evidence/rejected.jsonl
+--------------e------- /home/pete/code/blackbox-eval/collector_tests/results/fix4-before/evidence/store
+[ALLOWED] append a forged record (recomputed hash): forged record with a valid recomputed hash appended
+[ALLOWED] overwrite one byte in place
+[ALLOWED] replace the file via rename (sed -i style)
+[ALLOWED] truncate the journal
+[ALLOWED] rename the journal
+[ALLOWED] delete the journal
+[ALLOWED] delete a store object
+[ALLOWED] edit a store object in place: one byte changed in b31f53c76ab8d5b9...
+
+journal no longer exists; nothing to verify
+summary: {"append a forged record (recomputed hash)": "ALLOWED", "overwrite one byte in place": "ALLOWED", "replace the file via rename (sed -i style)": "ALLOWED", "truncate the journal": "ALLOWED", "rename the journal": "ALLOWED", "delete the journal": "ALLOWED", "delete a store object": "ALLOWED", "edit a store object in place": "ALLOWED", "verify_no_anchor": "journal gone", "verify_anchor": "journal gone"}

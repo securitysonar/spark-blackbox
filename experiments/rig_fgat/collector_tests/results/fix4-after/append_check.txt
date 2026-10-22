@@ -1,0 +1,8 @@
+# Forged append, checked without the store check (store edit already reported above)
+verify (no anchor, no store):
+[+] Recomputed and verified 4 blocks in evidence/audit_journal.jsonl. Head: d9bffb5dea7b3ff14c221f4ca085f7efb70062346aa23e33d78ae7440ded702e
+exit 0
+verify --anchor (no store):
+[+] Recomputed and verified 4 blocks in evidence/audit_journal.jsonl. Head: d9bffb5dea7b3ff14c221f4ca085f7efb70062346aa23e33d78ae7440ded702e
+[-] Anchor mismatch at block 4: journal has 4 blocks, anchor evidence/operational.jsonl has 3; sequences differ.
+exit 1

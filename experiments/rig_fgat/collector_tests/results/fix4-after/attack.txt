@@ -1,0 +1,22 @@
+
+# Fix 4 after attack — 2026-10-22T11:55:12Z
+uid: 1000
+lsattr:
+-----a--------e------- /home/pete/code/blackbox-eval/collector_tests/results/fix4-after/evidence/audit_journal.jsonl
+-----a--------e------- /home/pete/code/blackbox-eval/collector_tests/results/fix4-after/evidence/operational.jsonl
+-----a--------e------- /home/pete/code/blackbox-eval/collector_tests/results/fix4-after/evidence/rejected.jsonl
+-----a--------e------- /home/pete/code/blackbox-eval/collector_tests/results/fix4-after/evidence/store
+[ALLOWED] append a forged record (recomputed hash): forged record with a valid recomputed hash appended
+[DENIED]  overwrite one byte in place: [Errno 1] Operation not permitted: '/home/pete/code/blackbox-eval/collector_tests/results/fix4-after/evidence/audit_journal.jsonl'
+[DENIED]  replace the file via rename (sed -i style): [Errno 1] Operation not permitted: '/home/pete/code/blackbox-eval/collector_tests/results/fix4-after/evidence/audit_journal.jsonl.sed' -> '/home/pete/code/blackbox-eval/collector_tests/results/fix4-after/evidence/audit_journal.jsonl'
+[DENIED]  truncate the journal: [Errno 1] Operation not permitted: '/home/pete/code/blackbox-eval/collector_tests/results/fix4-after/evidence/audit_journal.jsonl'
+[DENIED]  rename the journal: [Errno 1] Operation not permitted: '/home/pete/code/blackbox-eval/collector_tests/results/fix4-after/evidence/audit_journal.jsonl' -> '/home/pete/code/blackbox-eval/collector_tests/results/fix4-after/evidence/audit_journal.jsonl.moved'
+[DENIED]  delete the journal: [Errno 1] Operation not permitted: '/home/pete/code/blackbox-eval/collector_tests/results/fix4-after/evidence/audit_journal.jsonl'
+[DENIED]  delete a store object: [Errno 1] Operation not permitted: '/home/pete/code/blackbox-eval/collector_tests/results/fix4-after/evidence/store/42575bdfcb1e3b74d7c52b3c46961a6310fe13e27b0dca2949f68de272596a82'
+[ALLOWED] edit a store object in place: one byte changed in b31f53c76ab8d5b9...
+
+verify --store (no anchor) exit: 1
+[-] Line 2: store object b31f53c76ab8d5b9d4a10d19b3d23a9f337cc3a8a8c3838ec6a657795b5e74ca (result_sha256) now hashes to d11552966ec6ff3145e4e656067a898c63aad6900ef200b5ed4ac7cbd8691f40. The stored content was altered.
+verify --anchor --store exit: 1
+[-] Line 2: store object b31f53c76ab8d5b9d4a10d19b3d23a9f337cc3a8a8c3838ec6a657795b5e74ca (result_sha256) now hashes to d11552966ec6ff3145e4e656067a898c63aad6900ef200b5ed4ac7cbd8691f40. The stored content was altered.
+summary: {"append a forged record (recomputed hash)": "ALLOWED", "overwrite one byte in place": "DENIED (EPERM)", "replace the file via rename (sed -i style)": "DENIED (EPERM)", "truncate the journal": "DENIED (EPERM)", "rename the journal": "DENIED (EPERM)", "delete the journal": "DENIED (EPERM)", "delete a store object": "DENIED (EPERM)", "edit a store object in place": "ALLOWED", "verify_no_anchor": 1, "verify_anchor": 1}

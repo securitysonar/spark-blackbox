@@ -62,6 +62,10 @@ class ForensicCollector:
         # reference content this collector stored, and it must stay small.
         self.store_dir = store_dir or os.path.join(os.path.dirname(worm_path), "store")
         self.blob_socket_path = blob_socket_path or os.path.join(os.path.dirname(socket_path), "blobs.sock")
+        # Partial writes land here and are renamed into the store, so the store
+        # directory itself can be append-only (chattr +a forbids renaming or
+        # deleting entries in it, but not creating them).
+        self.incoming_dir = self.store_dir.rstrip("/") + ".incoming"
         self.max_record_bytes = max_record_bytes
         self.max_blob_bytes = max_blob_bytes
         self.blob_sock = None
@@ -93,6 +97,7 @@ class ForensicCollector:
         Path(self.socket_path).parent.mkdir(parents=True, exist_ok=True)
         Path(self.rejects_path).parent.mkdir(parents=True, exist_ok=True)
         Path(self.store_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.incoming_dir).mkdir(parents=True, exist_ok=True)
 
         # Resume last block hash if journal already exists
         if os.path.exists(self.worm_path) and os.path.getsize(self.worm_path) > 0:
@@ -320,7 +325,7 @@ class ForensicCollector:
                 digest = hashlib.sha256(body).hexdigest()
                 path = os.path.join(self.store_dir, digest)
                 if not os.path.exists(path):
-                    tmp = f"{path}.tmp-{threading.get_ident()}"
+                    tmp = os.path.join(self.incoming_dir, f"{digest}.{threading.get_ident()}")
                     with open(tmp, "wb") as f:
                         f.write(body)
                         f.flush()

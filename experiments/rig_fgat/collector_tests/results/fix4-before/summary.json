@@ -1,0 +1,13 @@
+{
+  "label": "before",
+  "append a forged record (recomputed hash)": "ALLOWED",
+  "overwrite one byte in place": "ALLOWED",
+  "replace the file via rename (sed -i style)": "ALLOWED",
+  "truncate the journal": "ALLOWED",
+  "rename the journal": "ALLOWED",
+  "delete the journal": "ALLOWED",
+  "delete a store object": "ALLOWED",
+  "edit a store object in place": "ALLOWED",
+  "verify_no_anchor": "journal gone",
+  "verify_anchor": "journal gone"
+}
