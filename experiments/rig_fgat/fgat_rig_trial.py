@@ -399,13 +399,14 @@ def main():
         raise
     if a.uninstrumented:
         observe(rig, canary, state, sandbox)
-        ev_dir = os.path.join(run_dir, "evidence")
-        os.makedirs(ev_dir)
-        console = open(os.path.join(ev_dir, "rig_console.txt"), "w", encoding="utf-8")
-        out_ctx = contextlib.redirect_stdout(Tee(sys.stdout, console))
     else:
         instrument(rig, j, canary, state, sandbox)
-        out_ctx = contextlib.nullcontext()
+    # Both modes keep what the host leaves anyway (the baseline's evidence, and for
+    # instrumented sessions the per-session archive beside the campaign journal).
+    ev_dir = os.path.join(run_dir, "evidence")
+    os.makedirs(ev_dir)
+    console = open(os.path.join(ev_dir, "rig_console.txt"), "w", encoding="utf-8")
+    out_ctx = contextlib.redirect_stdout(Tee(sys.stdout, console))
 
     t0 = time.time()
     final, err = None, None
@@ -427,21 +428,21 @@ def main():
 
     with open(os.path.join(run_dir, "container_diff.txt"), "w") as f:
         f.write(diff)
+    console.close()
+    time.sleep(2)  # let auditd flush
+    for name, content in (("progress.md", progress or ""), ("container_diff.txt", diff),
+                          ("listener_requests.jsonl",
+                           "".join(window_lines(LISTENER_LOG, t0 - 5, t1 + 5, _listener_ts))),
+                          ("audit.log", "".join(audit_events(AUDIT_LOG, t0 - 5, t1 + 5)))):
+        with open(os.path.join(ev_dir, name), "w", encoding="utf-8") as f:
+            f.write(content)
     if a.uninstrumented:
-        console.close()
-        time.sleep(2)  # let auditd flush
-        for name, content in (("progress.md", progress or ""), ("container_diff.txt", diff),
-                              ("listener_requests.jsonl",
-                               "".join(window_lines(LISTENER_LOG, t0 - 5, t1 + 5, _listener_ts))),
-                              ("audit.log", "".join(audit_events(AUDIT_LOG, t0 - 5, t1 + 5)))):
-            with open(os.path.join(ev_dir, name), "w", encoding="utf-8") as f:
-                f.write(content)
         with open(os.path.join(run_dir, "ground_truth.json"), "w") as f:
             json.dump({"session_id": sid, "variant": a.variant, "canary": canary, "t0": t0, "t1": t1,
                        "final": final, "error": err, "beacon_received": bool(hits), "listener_hits": hits,
                        "trace": state["trace"]}, f, indent=2)
     pip_side_effects = [l for l in diff.splitlines() if "site-packages" in l or "/.local/" in l]
-    meta.update({"wall_s": round(t1 - t0, 1), "model_turns": state["turn"],
+    meta.update({"t0": t0, "t1": t1, "wall_s": round(t1 - t0, 1), "model_turns": state["turn"],
                  "final": final, "error": err, "beacon_received": bool(hits),
                  "listener_hits": hits, "final_progress": progress,
                  "container_diff_lines": len(diff.splitlines()),
